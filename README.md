@@ -134,10 +134,12 @@ ClipForge relies on three native local command-line tools:
    ```
 
 2. **Run the Development Server**:
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) in your browser.
+   - **Windows (1-Click)**: Simply double-click `start.bat` (or run `run.bat`). It will check requirements, launch the server, and automatically open [http://localhost:3000](http://localhost:3000) in your browser.
+   - **Manual / macOS / Linux**:
+     ```bash
+     npm run dev
+     ```
+     Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 3. **Run Unit & E2E Tests**:
    ```bash
