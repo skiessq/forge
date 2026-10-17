@@ -268,6 +268,39 @@ export function buildFFmpegExportCommand(
     encoderArgs.push('-preset', preset, '-crf', '19');
   }
 
+  // Intro hook text overlay (first 1-3 seconds)
+  if (project.introHook?.enabled && project.introHook.text) {
+    const hookText = project.introHook.text.replace(/'/g, '').replace(/:/g, '').trim();
+    const hookDur = project.introHook.duration || 2.5;
+    const hookColor = (project.introHook.color || '#FFE600').replace('#', '0x');
+    const hookFontSize = Math.round((project.introHook.fontSize || 56) * 1.0);
+    filterChains.push(
+      `${finalVideoStream}drawtext=text='${hookText}':fontsize=${hookFontSize}:fontcolor=${hookColor}:box=1:boxcolor=black@0.75:boxborderw=16:x=(w-text_w)/2:y=h*0.22:enable='between(t,0,${hookDur})'[v_hook]`
+    );
+    finalVideoStream = '[v_hook]';
+  }
+
+  // Watermark overlay
+  if (project.watermark?.enabled) {
+    const wmOpacity = (project.watermark.opacity ?? 0.8).toFixed(2);
+    let wmX = 'w-tw-40';
+    let wmY = '40';
+    if (project.watermark.position === 'top-left') {
+      wmX = '40';
+      wmY = '40';
+    } else if (project.watermark.position === 'bottom-left') {
+      wmX = '40';
+      wmY = 'h-th-80';
+    } else if (project.watermark.position === 'bottom-right') {
+      wmX = 'w-tw-40';
+      wmY = 'h-th-80';
+    }
+    filterChains.push(
+      `${finalVideoStream}drawtext=text='CLIPFORGE':fontsize=28:fontcolor=white@${wmOpacity}:x=${wmX}:y=${wmY}[v_wm]`
+    );
+    finalVideoStream = '[v_wm]';
+  }
+
   // Subtitle burning with libass
   if (project.subtitles && project.subtitles.length > 0) {
     const { generateAssSubtitles } = require('../subtitles/assGenerator');

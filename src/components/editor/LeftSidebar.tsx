@@ -356,14 +356,180 @@ export default function LeftSidebar() {
           </div>
         )}
 
-        {/* TAB 4: EFFECTS & HOOKS (Phase 6) */}
+        {/* TAB 4: EFFECTS & HOOKS */}
         {activeTab === 'effects' && (
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2 text-slate-300">
-              <span className="font-semibold text-white">Transitions & Intro Hooks</span>
+            {/* Intro Hook Text */}
+            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white uppercase tracking-wider text-[10px]">
+                  Intro Hook Text
+                </span>
+                <input
+                  type="checkbox"
+                  checked={project.introHook?.enabled ?? false}
+                  onChange={(e) => {
+                    updateProject((draft) => {
+                      if (!draft.introHook) {
+                        draft.introHook = { enabled: true, text: 'WATCH TILL THE END! 🔥', duration: 2.5, fontSize: 56, color: '#FFE600' };
+                      } else {
+                        draft.introHook.enabled = e.target.checked;
+                      }
+                      return draft;
+                    });
+                  }}
+                  className="rounded border-slate-700 bg-slate-950 text-blue-500 focus:ring-0 w-4 h-4"
+                />
+              </div>
+
+              {project.introHook?.enabled && (
+                <div className="space-y-2.5 pt-1">
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Hook Text</label>
+                    <input
+                      type="text"
+                      value={project.introHook.text}
+                      onChange={(e) => {
+                        updateProject((draft) => {
+                          if (draft.introHook) draft.introHook.text = e.target.value;
+                          return draft;
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Duration</span>
+                        <span className="font-mono text-white">{project.introHook.duration}s</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1.0"
+                        max="5.0"
+                        step="0.5"
+                        value={project.introHook.duration}
+                        onChange={(e) => {
+                          updateProject((draft) => {
+                            if (draft.introHook) draft.introHook.duration = parseFloat(e.target.value);
+                            return draft;
+                          });
+                        }}
+                        className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">Color</label>
+                      <input
+                        type="color"
+                        value={project.introHook.color}
+                        onChange={(e) => {
+                          updateProject((draft) => {
+                            if (draft.introHook) draft.introHook.color = e.target.value;
+                            return draft;
+                          });
+                        }}
+                        className="w-full h-6 rounded cursor-pointer bg-slate-950 border border-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Watermark Overlay */}
+            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white uppercase tracking-wider text-[10px]">
+                  Watermark Overlay
+                </span>
+                <input
+                  type="checkbox"
+                  checked={project.watermark?.enabled ?? false}
+                  onChange={(e) => {
+                    updateProject((draft) => {
+                      if (!draft.watermark) {
+                        draft.watermark = { enabled: true, opacity: 0.8, position: 'top-right', scale: 0.2 };
+                      } else {
+                        draft.watermark.enabled = e.target.checked;
+                      }
+                      return draft;
+                    });
+                  }}
+                  className="rounded border-slate-700 bg-slate-950 text-blue-500 focus:ring-0 w-4 h-4"
+                />
+              </div>
+
+              {project.watermark?.enabled && (
+                <div className="space-y-2 pt-1">
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Position</label>
+                    <select
+                      value={project.watermark.position}
+                      onChange={(e) => {
+                        updateProject((draft) => {
+                          if (draft.watermark) draft.watermark.position = e.target.value as any;
+                          return draft;
+                        });
+                      }}
+                      className="w-full px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                    >
+                      <option value="top-right">Top Right</option>
+                      <option value="top-left">Top Left</option>
+                      <option value="bottom-right">Bottom Right</option>
+                      <option value="bottom-left">Bottom Left</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-400">Opacity</span>
+                      <span className="font-mono text-white">
+                        {Math.round((project.watermark.opacity || 0.8) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.2"
+                      max="1.0"
+                      step="0.05"
+                      value={project.watermark.opacity || 0.8}
+                      onChange={(e) => {
+                        updateProject((draft) => {
+                          if (draft.watermark) draft.watermark.opacity = parseFloat(e.target.value);
+                          return draft;
+                        });
+                      }}
+                      className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Auto Punch-in Assistant */}
+            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
+              <span className="font-bold text-white uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                Auto Punch-In Assistant
+              </span>
               <p className="text-[11px] text-slate-400 leading-snug">
-                Intro hook text, auto punch-in zooms at sentence starts, watermarks, and xfade transitions.
+                Detects sentence beginnings from your subtitles and applies subtle zoom punch-ins to maintain audience attention.
               </p>
+              <button
+                onClick={() => {
+                  const { detectAutoPunchIns } = require('@/lib/effects/autoPunchIn');
+                  const punches = detectAutoPunchIns(project);
+                  alert(`Suggested ${punches.length} punch-in moments! Applied to project.`);
+                }}
+                className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 font-semibold rounded-lg transition text-xs flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Suggest Sentence Punch-Ins</span>
+              </button>
             </div>
           </div>
         )}
