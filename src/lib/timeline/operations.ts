@@ -18,11 +18,13 @@ export function splitClip(
 
   const duration1 = splitTime - clip.start;
   const duration2 = clip.duration - duration1;
+  const baseLayout = clip.layoutOverride ? JSON.parse(JSON.stringify(clip.layoutOverride)) : undefined;
 
   const clip1: TimelineClip = {
     ...clip,
     duration: duration1,
     sourceDuration: duration1,
+    layoutOverride: baseLayout ? JSON.parse(JSON.stringify(baseLayout)) : undefined,
   };
 
   const newClipId = `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -33,6 +35,7 @@ export function splitClip(
     duration: duration2,
     sourceStart: clip.sourceStart + duration1,
     sourceDuration: duration2,
+    layoutOverride: baseLayout ? JSON.parse(JSON.stringify(baseLayout)) : undefined,
   };
 
   const newClips = [...track.clips];

@@ -11,6 +11,8 @@ import {
   Loader2,
   CheckCircle2,
   Film,
+  HardDrive,
+  Zap,
 } from 'lucide-react';
 import { JobProgress } from '@/lib/types';
 
@@ -22,7 +24,11 @@ interface Props {
 
 export default function NewProjectModal({ isOpen, onClose, onCreated }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<'upload' | 'twitch' | 'sample'>('upload');
+  const [tab, setTab] = useState<'local' | 'upload' | 'twitch' | 'sample'>('local');
+
+  // Local file path state (Instant for 2.8GB+)
+  const [localPath, setLocalPath] = useState('');
+  const [isImportingLocal, setIsImportingLocal] = useState(false);
 
   // Upload state
   const [file, setFile] = useState<File | null>(null);
@@ -43,6 +49,34 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  // Handle local file path import (0s transfer)
+  const handleLocalImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!localPath.trim()) {
+      setError('Please enter a local file path on your computer (e.g. C:\\Videos\\recording.mp4)');
+      return;
+    }
+    setError(null);
+    setIsImportingLocal(true);
+    try {
+      const res = await fetch('/api/media/import-local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: localPath.trim(), name: projectName.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to import local file');
+      }
+      onCreated();
+      onClose();
+      router.push(`/editor/${data.project.id}`);
+    } catch (err: any) {
+      setError(err.message);
+      setIsImportingLocal(false);
+    }
+  };
 
   // Handle local file upload
   const handleUpload = async (e: React.FormEvent) => {
@@ -192,6 +226,17 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: Props) {
         {/* Navigation Tabs */}
         <div className="flex border-b border-slate-800 px-6 pt-3 gap-4 bg-slate-950/20">
           <button
+            onClick={() => { setTab('local'); setError(null); }}
+            className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
+              tab === 'local'
+                ? 'border-amber-500 text-amber-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <HardDrive className="w-4 h-4 text-amber-400" />
+            Instant Local File (2.8GB+)
+          </button>
+          <button
             onClick={() => { setTab('upload'); setError(null); }}
             className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
               tab === 'upload'
@@ -248,6 +293,58 @@ export default function NewProjectModal({ isOpen, onClose, onCreated }: Props) {
               className="w-full px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
             />
           </div>
+
+          {/* TAB 0: Instant Local File Path */}
+          {tab === 'local' && (
+            <form onSubmit={handleLocalImport} className="space-y-4">
+              <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
+                    <Zap className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-white">
+                      Instant 0-Second Ingestion for Massive Videos (2.8GB+)
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      For large recordings (30m to 2h+ VODs), avoid slow multi-gigabyte browser uploads! Paste the local path to the video file on your computer and ClipForge will probe and load it natively with zero waiting.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <label className="block text-xs font-medium text-slate-300">
+                    File Path on Your PC
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. C:\Users\tiago\Videos\recording.mp4 or D:\Clips\gameplay.mp4"
+                    value={localPath}
+                    onChange={(e) => setLocalPath(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!localPath.trim() || isImportingLocal}
+                className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20"
+              >
+                {isImportingLocal ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Probing Video Media...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Load Video Instantly</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
           {/* TAB 1: File Upload */}
           {tab === 'upload' && (

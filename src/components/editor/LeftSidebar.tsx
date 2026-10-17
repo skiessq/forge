@@ -34,6 +34,9 @@ export default function LeftSidebar() {
   const [newTemplateName, setNewTemplateName] = useState('');
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
+  const videoTrack = project?.tracks?.find((t) => t.type === 'video');
+  const videoDuration = Math.round((videoTrack?.clips?.reduce((acc, c) => acc + c.duration, 0) || project?.source?.probe?.duration || 30) * 10) / 10;
+
   const handleSaveTemplate = async () => {
     if (!newTemplateName.trim()) return;
     setIsSavingTemplate(true);
@@ -573,8 +576,8 @@ export default function LeftSidebar() {
                       <label className="text-[11px] text-slate-400 font-medium">Hook Headline</label>
                       <span className="text-[9px] text-amber-400 font-mono">Wrap *word* to highlight</span>
                     </div>
-                    <input
-                      type="text"
+                    <textarea
+                      rows={2}
                       value={project.introHook.text}
                       onChange={(e) => {
                         updateProject((draft) => {
@@ -583,8 +586,117 @@ export default function LeftSidebar() {
                         });
                       }}
                       placeholder="e.g. *WAIT* FOR THE END! 😱"
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-medium"
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-medium text-xs resize-y min-h-[46px]"
                     />
+                    <div className="text-[9px] text-slate-500 mt-0.5">
+                      Tip: Use Enter or \n for custom line breaks, or choose words per line below.
+                    </div>
+                  </div>
+
+                  {/* Words Per Line / Line Break Mode */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[11px] text-slate-400 font-medium">Line Layout / Words Per Line</label>
+                      <span className="text-[9px] text-slate-400 font-mono">
+                        {project.introHook.wordsPerLine === -1
+                          ? 'Single Line'
+                          : (project.introHook.wordsPerLine ?? 0) === 0
+                          ? 'Auto'
+                          : `${project.introHook.wordsPerLine} words/line`}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {[
+                        { label: 'Auto', val: 0 },
+                        { label: '1 Line', val: -1 },
+                        { label: '2 Words', val: 2 },
+                        { label: '3 Words', val: 3 },
+                        { label: '4 Words', val: 4 },
+                      ].map((opt) => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          onClick={() => {
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.wordsPerLine = opt.val;
+                              return draft;
+                            });
+                          }}
+                          className={`py-1 text-[10px] rounded font-semibold transition border ${
+                            (project.introHook.wordsPerLine ?? 0) === opt.val
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Font Size Control */}
+                  <div>
+                    <div className="flex justify-between items-center text-[11px] mb-1">
+                      <span className="text-slate-400 font-medium">Font Size</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="16"
+                          max="90"
+                          value={project.introHook.fontSize || 42}
+                          onChange={(e) => {
+                            const val = Math.max(14, Math.min(100, parseInt(e.target.value) || 32));
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.fontSize = val;
+                              return draft;
+                            });
+                          }}
+                          className="w-12 px-1.5 py-0.5 bg-slate-950 border border-slate-800 rounded font-mono text-white text-[11px] text-right"
+                        />
+                        <span className="text-[10px] text-slate-500 font-mono">px</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="18"
+                      max="72"
+                      step="2"
+                      value={project.introHook.fontSize || 42}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        updateProject((draft) => {
+                          if (draft.introHook) draft.introHook.fontSize = val;
+                          return draft;
+                        });
+                      }}
+                      className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-500"
+                    />
+                    <div className="flex gap-1 mt-1.5">
+                      {[
+                        { label: 'Compact 26px', size: 26 },
+                        { label: 'Normal 36px', size: 36 },
+                        { label: 'Medium 46px', size: 46 },
+                        { label: 'Large 58px', size: 58 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.size}
+                          type="button"
+                          onClick={() => {
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.fontSize = preset.size;
+                              return draft;
+                            });
+                          }}
+                          className={`flex-1 py-0.5 text-[9px] rounded font-medium transition border ${
+                            (project.introHook.fontSize || 42) === preset.size
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : 'bg-slate-950/60 text-slate-400 border-slate-800/80 hover:text-white'
+                          }`}
+                        >
+                          {preset.label.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Transition Effect Selector */}
@@ -675,26 +787,106 @@ export default function LeftSidebar() {
                     </div>
                   </div>
 
-                  {/* Duration Slider */}
-                  <div>
-                    <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-slate-400">Duration on Screen</span>
-                      <span className="font-mono text-white font-bold">{project.introHook.duration}s</span>
+                  {/* Duration & Whole Video Control */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400 font-medium">Duration on Screen</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.5"
+                          max={videoDuration}
+                          disabled={project.introHook.stayWholeVideo}
+                          value={project.introHook.stayWholeVideo ? videoDuration : (project.introHook.duration || 2.5)}
+                          onChange={(e) => {
+                            const val = Math.max(0.5, Math.min(videoDuration, parseFloat(e.target.value) || 2.5));
+                            updateProject((draft) => {
+                              if (draft.introHook) {
+                                draft.introHook.duration = val;
+                                draft.introHook.stayWholeVideo = false;
+                              }
+                              return draft;
+                            });
+                          }}
+                          className="w-14 px-1.5 py-0.5 bg-slate-950 border border-slate-800 rounded font-mono text-white text-[11px] text-right disabled:opacity-50"
+                        />
+                        <span className="text-[10px] text-slate-500 font-mono">sec</span>
+                      </div>
                     </div>
+
                     <input
                       type="range"
-                      min="1.0"
-                      max="5.0"
-                      step="0.5"
-                      value={project.introHook.duration}
+                      min="0.5"
+                      max={videoDuration}
+                      step="0.1"
+                      disabled={project.introHook.stayWholeVideo}
+                      value={project.introHook.stayWholeVideo ? videoDuration : (project.introHook.duration || 2.5)}
                       onChange={(e) => {
+                        const val = parseFloat(e.target.value);
                         updateProject((draft) => {
-                          if (draft.introHook) draft.introHook.duration = parseFloat(e.target.value);
+                          if (draft.introHook) {
+                            draft.introHook.duration = val;
+                            draft.introHook.stayWholeVideo = false;
+                          }
                           return draft;
                         });
                       }}
-                      className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-500"
+                      className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-500 disabled:opacity-50"
                     />
+
+                    {/* Quick Duration & Whole Video Toggles */}
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      {[
+                        { label: '2.5s', dur: 2.5 },
+                        { label: '5s', dur: 5.0 },
+                        { label: '10s', dur: 10.0 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            updateProject((draft) => {
+                              if (draft.introHook) {
+                                draft.introHook.duration = preset.dur;
+                                draft.introHook.stayWholeVideo = false;
+                              }
+                              return draft;
+                            });
+                          }}
+                          className={`px-2 py-0.5 text-[10px] rounded font-medium border transition ${
+                            !project.introHook.stayWholeVideo && project.introHook.duration === preset.dur
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+
+                      {/* Stay Whole Video Button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateProject((draft) => {
+                            if (draft.introHook) {
+                              draft.introHook.stayWholeVideo = !draft.introHook.stayWholeVideo;
+                              if (draft.introHook.stayWholeVideo) {
+                                draft.introHook.duration = videoDuration;
+                              }
+                            }
+                            return draft;
+                          });
+                        }}
+                        className={`flex-1 py-0.5 text-[10px] rounded font-semibold border transition flex items-center justify-center gap-1 ${
+                          project.introHook.stayWholeVideo
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                            : 'bg-slate-950 text-amber-400 border-amber-500/30 hover:border-amber-500/60'
+                        }`}
+                      >
+                        <span>Entire Video ({videoDuration}s)</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Direct Screen Positioning Section */}

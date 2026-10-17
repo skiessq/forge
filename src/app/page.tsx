@@ -61,18 +61,18 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
-            {projects.length > 0 && (
-              <button
-                onClick={() => {
+            <button
+              onClick={() => {
+                if (projects.length > 0 && !selectedHighlightProject) {
                   setSelectedHighlightProject(projects[0]);
-                  setIsHighlightOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500/15 to-indigo-600/15 hover:from-amber-500/25 hover:to-indigo-600/25 border border-amber-500/30 text-amber-300 font-medium text-xs rounded-xl transition shadow-md shadow-amber-500/10"
-              >
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span>Auto-Highlight</span>
-              </button>
-            )}
+                }
+                setIsHighlightOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500/15 to-indigo-600/15 hover:from-amber-500/25 hover:to-indigo-600/25 border border-amber-500/30 text-amber-300 font-medium text-xs rounded-xl transition shadow-md shadow-amber-500/10"
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>Auto-Highlight</span>
+            </button>
 
             {projects.length > 1 && (
               <button
@@ -208,16 +208,14 @@ export default function DashboardPage() {
       />
 
       {/* Modal for Auto-Highlight AI Analysis */}
-      {selectedHighlightProject && (
-        <AutoHighlightModal
-          isOpen={isHighlightOpen}
-          onClose={() => setIsHighlightOpen(false)}
-          projectId={selectedHighlightProject.id}
-          sourcePath={selectedHighlightProject.source.path}
-          sourceDuration={selectedHighlightProject.source.probe.duration}
-          onProjectsCreated={() => fetchProjects()}
-        />
-      )}
+      <AutoHighlightModal
+        isOpen={isHighlightOpen}
+        onClose={() => setIsHighlightOpen(false)}
+        projectId={selectedHighlightProject?.id || ''}
+        sourcePath={selectedHighlightProject?.source?.path || ''}
+        sourceDuration={selectedHighlightProject?.source?.probe?.duration || 60}
+        onProjectsCreated={() => fetchProjects()}
+      />
     </div>
   );
 }

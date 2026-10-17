@@ -4,6 +4,44 @@ import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
+function nodeStreamToWebStream(nodeStream: fs.ReadStream): ReadableStream {
+  let isClosed = false;
+  return new ReadableStream({
+    start(controller) {
+      nodeStream.on('data', (chunk) => {
+        if (isClosed) return;
+        try {
+          controller.enqueue(chunk);
+        } catch {
+          isClosed = true;
+          nodeStream.destroy();
+        }
+      });
+      nodeStream.on('end', () => {
+        if (!isClosed) {
+          isClosed = true;
+          try {
+            controller.close();
+          } catch {}
+        }
+      });
+      nodeStream.on('error', (err) => {
+        if (!isClosed) {
+          isClosed = true;
+          try {
+            controller.error(err);
+          } catch {}
+        }
+      });
+    },
+    cancel() {
+      // Called when client aborts/seeks video stream
+      isClosed = true;
+      nodeStream.destroy();
+    },
+  });
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const filePath = searchParams.get('path');
@@ -52,15 +90,7 @@ export async function GET(req: NextRequest) {
 
     const chunksize = end - start + 1;
     const fileStream = fs.createReadStream(resolvedPath, { start, end });
-
-    // Web Streams response
-    const stream = new ReadableStream({
-      start(controller) {
-        fileStream.on('data', (chunk) => controller.enqueue(chunk));
-        fileStream.on('end', () => controller.close());
-        fileStream.on('error', (err) => controller.error(err));
-      },
-    });
+    const stream = nodeStreamToWebStream(fileStream);
 
     return new NextResponse(stream, {
       status: 206,
@@ -73,13 +103,7 @@ export async function GET(req: NextRequest) {
     });
   } else {
     const fileStream = fs.createReadStream(resolvedPath);
-    const stream = new ReadableStream({
-      start(controller) {
-        fileStream.on('data', (chunk) => controller.enqueue(chunk));
-        fileStream.on('end', () => controller.close());
-        fileStream.on('error', (err) => controller.error(err));
-      },
-    });
+    const stream = nodeStreamToWebStream(fileStream);
 
     return new NextResponse(stream, {
       status: 200,

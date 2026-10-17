@@ -67,6 +67,38 @@ export function planChunks(
 /**
  * Runs faster-whisper on an audio chunk file via Python script.
  */
+function parseWhisperOutput(stdout: string): any {
+  let jsonStr = stdout.trim();
+  if (jsonStr.includes('FINAL_RESULT:')) {
+    jsonStr = jsonStr.split('FINAL_RESULT:')[1].trim();
+  } else {
+    const jsonStart = jsonStr.indexOf('{');
+    const jsonEnd = jsonStr.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      jsonStr = jsonStr.slice(jsonStart, jsonEnd + 1);
+    }
+  }
+  return JSON.parse(jsonStr);
+}
+
+function findPythonExecutable(): string {
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'python.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'python.exe'),
+    'C:\\Python311\\python.exe',
+    'C:\\Python312\\python.exe',
+    'python',
+  ];
+  for (const cand of candidates) {
+    if (cand && fs.existsSync(cand)) return cand;
+  }
+  return 'python';
+}
+
+/**
+ * Runs faster-whisper on an audio chunk file via Python script.
+ */
 function runWhisperOnChunk(
   audioChunkPath: string,
   language: string,
@@ -74,10 +106,11 @@ function runWhisperOnChunk(
 ): Promise<{ language: string; segments: TranscriptSegment[] }> {
   return new Promise((resolve, reject) => {
     const scriptPath = path.resolve(process.cwd(), 'scripts', 'transcribe_whisper.py');
+    const pythonCmd = findPythonExecutable();
     const child = spawn(
-      'python',
-      [scriptPath, audioChunkPath, language || 'auto', modelSize || 'base'],
-      { windowsHide: true }
+      pythonCmd,
+      ['-u', scriptPath, audioChunkPath, language || 'auto', modelSize || 'small'],
+      { windowsHide: true, env: { ...process.env, PYTHONUNBUFFERED: '1' } }
     );
 
     let stdout = '';
@@ -89,7 +122,7 @@ function runWhisperOnChunk(
     child.on('close', (code) => {
       if (code === 0) {
         try {
-          const parsed = JSON.parse(stdout.trim());
+          const parsed = parseWhisperOutput(stdout);
           resolve(parsed);
         } catch (err: any) {
           reject(new Error(`Failed to parse whisper chunk JSON: ${err.message}`));
@@ -100,6 +133,112 @@ function runWhisperOnChunk(
     });
 
     child.on('error', (err) => reject(err));
+  });
+}
+
+/**
+ * Single-pass GPU transcription with live progress streaming.
+ * Transcribes the full media in one go on RTX GPU without reloading the model 15 times!
+ */
+export function runWhisperSinglePass(
+  audioPath: string,
+  language: string,
+  modelSize: string,
+  onProgress?: (progress: number, stage: string, etaSeconds?: number) => void,
+  isCancelled?: () => boolean
+): Promise<{ language: string; segments: TranscriptSegment[] }> {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.resolve(process.cwd(), 'scripts', 'transcribe_whisper.py');
+    const pythonCmd = findPythonExecutable();
+    const child = spawn(
+      pythonCmd,
+      ['-u', scriptPath, audioPath, language || 'auto', modelSize || 'small'],
+      { windowsHide: true, env: { ...process.env, PYTHONUNBUFFERED: '1' } }
+    );
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => {
+      const text = d.toString();
+      stdout += text;
+      const match = text.match(/PROGRESS:([0-9.]+):([0-9.]+):([0-9.]+):([0-9.]+)/);
+      if (match) {
+        const [, curr, total, pct, speed] = match;
+        const currentSec = parseFloat(curr);
+        const totalSec = parseFloat(total);
+        const speedVal = parseFloat(speed);
+        const percent = Math.min(98, Math.max(2, parseFloat(pct)));
+        const remainingSec = totalSec > currentSec && speedVal > 0 ? (totalSec - currentSec) / speedVal : undefined;
+        onProgress?.(
+          Math.round(percent),
+          `Transcribing on NVIDIA RTX GPU (${modelSize}) at ${speed}x realtime (${Math.round(currentSec)}s / ${Math.round(totalSec)}s)...`,
+          remainingSec ? Math.round(remainingSec) : undefined
+        );
+      }
+    });
+
+    child.stderr.on('data', (d) => {
+      const text = d.toString();
+      stderr += text;
+      if (text.includes('Loading faster-whisper') || text.includes('Selected device') || text.includes('Attempting')) {
+        onProgress?.(3, text.trim().slice(0, 90));
+      }
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const parsed = parseWhisperOutput(stdout);
+          resolve(parsed);
+        } catch (err: any) {
+          reject(new Error(`Failed to parse whisper single-pass JSON: ${err.message}`));
+        }
+      } else {
+        reject(new Error(`Whisper single-pass script exited with code ${code}: ${stderr.slice(-300)}`));
+      }
+    });
+
+    child.on('error', (err) => reject(err));
+  });
+}
+
+/**
+ * Extracts 16kHz mono audio from video file with vocal clarity filter.
+ */
+function extractMasterAudio(
+  ffmpegExe: string,
+  sourcePath: string,
+  outputPath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      ffmpegExe,
+      [
+        '-y',
+        '-i',
+        sourcePath,
+        '-vn',
+        '-ar',
+        '16000',
+        '-ac',
+        '1',
+        '-af',
+        'highpass=f=80,lowpass=f=8000,dynaudnorm=f=150:g=15:m=20',
+        '-c:a',
+        'pcm_s16le',
+        outputPath,
+      ],
+      { windowsHide: true }
+    );
+
+    let stderr = '';
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Master audio extraction failed (${code}): ${stderr.slice(-200)}`));
+    });
+    child.on('error', reject);
   });
 }
 
@@ -207,6 +346,8 @@ function extractChunkAudio(
         '16000',
         '-ac',
         '1',
+        '-af',
+        'highpass=f=80,lowpass=f=8000,dynaudnorm=f=150:g=15:m=20',
         '-c:a',
         'pcm_s16le',
         outputPath,
@@ -252,6 +393,54 @@ export async function transcribeWholeVideo(
   }
 
   const cacheDir = getSourceCacheDir(sourceHash);
+  const ffmpegExe = findExecutable('ffmpeg');
+  if (!ffmpegExe) {
+    throw new Error('FFmpeg executable not found on system.');
+  }
+
+  // 1. Try high-throughput Single-Pass GPU Batching first (5x-8x faster on RTX GPU, loads model once)
+  const masterWavPath = path.join(cacheDir, 'audio_master.wav');
+  try {
+    if (!fs.existsSync(masterWavPath)) {
+      onProgress?.(2, 'Extracting master audio with vocal clarity filter...');
+      await extractMasterAudio(ffmpegExe, sourcePath, masterWavPath);
+    }
+
+    onProgress?.(4, `Initializing high-throughput GPU Whisper (${modelSize})...`);
+    const singlePassResult = await runWhisperSinglePass(
+      masterWavPath,
+      language,
+      modelSize,
+      onProgress,
+      isCancelled
+    );
+
+    if (singlePassResult && singlePassResult.segments && singlePassResult.segments.length > 0) {
+      const allWords: TranscriptWord[] = [];
+      for (const seg of singlePassResult.segments) {
+        if (seg.words && seg.words.length > 0) {
+          allWords.push(...seg.words);
+        }
+      }
+
+      const finalTranscript: Transcript = {
+        language: singlePassResult.language || 'en',
+        duration: sourceDuration,
+        segments: singlePassResult.segments,
+        words: allWords,
+        createdAt: new Date().toISOString(),
+        sourceHash,
+      };
+
+      saveCachedTranscript(sourceHash, finalTranscript);
+      onProgress?.(100, `High-speed GPU transcription complete! ${allWords.length} words detected.`);
+      return finalTranscript;
+    }
+  } catch (gpuErr: any) {
+    console.warn(`Single-pass GPU transcription notice (${gpuErr.message}), falling back to chunked runner...`);
+  }
+
+  // 2. Fallback: Chunked, resumable transcription if single pass failed
   const chunksDir = path.join(cacheDir, 'whisper_chunks');
   if (!fs.existsSync(chunksDir)) {
     fs.mkdirSync(chunksDir, { recursive: true });
@@ -260,11 +449,6 @@ export async function transcribeWholeVideo(
   const chunks = planChunks(sourceDuration, chunkDurationSec, chunkOverlapSec);
   const totalChunks = chunks.length;
   const chunkResults: { chunk: ChunkInfo; raw: any }[] = [];
-
-  const ffmpegExe = findExecutable('ffmpeg');
-  if (!ffmpegExe) {
-    throw new Error('FFmpeg executable not found on system.');
-  }
 
   const startTime = Date.now();
 

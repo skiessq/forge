@@ -43,15 +43,44 @@ export function snapToWordBoundaries(
   const firstWord = inWindow[0];
   const lastWord = inWindow[inWindow.length - 1];
 
-  // Natural margins: 150ms before speech, 250ms after speech completes
-  // Ensure we NEVER cut into speech: start <= firstWord.start, end >= lastWord.end
+  let resolvedEnd = lastWord.end;
+  let finalWords = [...inWindow];
+
+  // Conversation context preservation: check if speech continues immediately after lastWord
+  const lastWordIdx = words.findIndex((w) => w.start === lastWord.start && w.end === lastWord.end);
+  if (lastWordIdx >= 0 && lastWordIdx + 1 < words.length) {
+    const nextWord = words[lastWordIdx + 1];
+    const speechGap = nextWord.start - lastWord.end;
+    const isQuestion = /\?$/.test(lastWord.word.trim());
+
+    // If clip ended on a question and someone replies, or if next word starts immediately (< 0.7s)
+    if ((isQuestion && speechGap < 2.0) || speechGap < 0.7) {
+      let extIdx = lastWordIdx + 1;
+      // Allow up to +6 seconds extension to complete the thought/answer
+      while (extIdx < words.length && words[extIdx].end - lastWord.end <= 6.0) {
+        finalWords.push(words[extIdx]);
+        resolvedEnd = words[extIdx].end;
+        const curWord = words[extIdx];
+        const nextNext = extIdx + 1 < words.length ? words[extIdx + 1] : null;
+        const nextGap = nextNext ? nextNext.start - curWord.end : 999;
+        const isFinished = /[.!?]$/.test(curWord.word.trim());
+
+        // Finished sentence with natural pause
+        if (isFinished && nextGap >= 0.4) break;
+        if (nextGap >= 0.8) break;
+        extIdx++;
+      }
+    }
+  }
+
+  // Natural margins: 150ms before speech, 300ms after speech completes
   const snappedStart = Math.max(0, Math.round((firstWord.start - 0.15) * 1000) / 1000);
-  const snappedEnd = Math.round((lastWord.end + 0.25) * 1000) / 1000;
+  const snappedEnd = Math.round((resolvedEnd + 0.3) * 1000) / 1000;
 
   return {
     snappedStart,
     snappedEnd: Math.max(snappedStart + minClipLength, snappedEnd),
-    snappedWords: inWindow,
+    snappedWords: finalWords,
   };
 }
 

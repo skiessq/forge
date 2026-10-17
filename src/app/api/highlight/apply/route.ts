@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProject, saveProject } from '@/lib/storage/workspace';
+import { getProject, saveProject, getProjectDir } from '@/lib/storage/workspace';
 import { listTemplates, ProjectTemplate } from '@/lib/storage/templates';
 import { createDefaultProject } from '@/lib/constants';
 import { Candidate } from '@/lib/highlight/types';
 import { SubtitleItem, SubtitleWord } from '@/lib/types';
+import { findExecutable } from '@/lib/ffmpeg/systemCheck';
+import { probeMedia } from '@/lib/ffmpeg/probe';
+import { execSync } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import { smartSegmentWords } from '@/lib/subtitles/smartSegmentation';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,20 +38,61 @@ export async function POST(req: NextRequest) {
     }
 
     const createdProjects: any[] = [];
+    const ffmpegExe = findExecutable('ffmpeg');
 
     for (const cand of approvedCandidates as Candidate[]) {
       const newId = `proj_hl_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const cleanTitle = cand.title?.trim() || `Viral Highlight (${Math.round(cand.start)}s - ${Math.round(cand.end)}s)`;
 
+      const projectDir = getProjectDir(newId);
+      const cutVideoPath = path.join(projectDir, 'source.mp4');
+
+      // 1. Physically cut video & audio slice using native FFmpeg
+      let hasCutFile = false;
+      if (ffmpegExe && fs.existsSync(baseProject.source.path)) {
+        try {
+          // -ss before -i for fast seek, accurate encoding to guarantee zero audio drift and exact frame cuts
+          const cutCmd = `"${ffmpegExe}" -y -ss ${cand.start.toFixed(3)} -t ${cand.duration.toFixed(3)} -i "${baseProject.source.path}" -c:v libx264 -preset veryfast -crf 18 -c:a aac -b:a 192k "${cutVideoPath}"`;
+          execSync(cutCmd, { stdio: 'pipe' });
+          if (fs.existsSync(cutVideoPath) && fs.statSync(cutVideoPath).size > 1000) {
+            hasCutFile = true;
+          }
+        } catch (cutErr) {
+          console.error(`Failed re-encode cut for candidate ${cand.id}, attempting stream copy fallback:`, cutErr);
+          try {
+            const copyCmd = `"${ffmpegExe}" -y -ss ${cand.start.toFixed(3)} -t ${cand.duration.toFixed(3)} -i "${baseProject.source.path}" -c copy "${cutVideoPath}"`;
+            execSync(copyCmd, { stdio: 'pipe' });
+            if (fs.existsSync(cutVideoPath) && fs.statSync(cutVideoPath).size > 1000) {
+              hasCutFile = true;
+            }
+          } catch (copyErr) {
+            console.error(`Failed stream copy fallback:`, copyErr);
+          }
+        }
+      }
+
+      const activeSourcePath = hasCutFile ? cutVideoPath : baseProject.source.path;
+      const originalFileName = hasCutFile
+        ? `${path.parse(baseProject.source.originalFileName).name}_clip_${Math.round(cand.start)}s.mp4`
+        : baseProject.source.originalFileName;
+
+      let probe = baseProject.source.probe;
+      if (hasCutFile) {
+        try {
+          probe = probeMedia(cutVideoPath);
+        } catch {
+          probe = { ...baseProject.source.probe, duration: cand.duration };
+        }
+      } else {
+        probe = { ...baseProject.source.probe, duration: cand.duration };
+      }
+
       const newProj = createDefaultProject(
         newId,
         cleanTitle,
-        baseProject.source.path,
-        baseProject.source.originalFileName,
-        {
-          ...baseProject.source.probe,
-          duration: cand.duration,
-        }
+        activeSourcePath,
+        originalFileName,
+        probe
       );
 
       // Apply Layout
@@ -74,13 +121,18 @@ export async function POST(req: NextRequest) {
         newProj.watermark = JSON.parse(JSON.stringify(template.watermark));
       }
 
-      // Apply Hook Title as intro hook banner
+      // Apply Hook Title as intro hook banner (matching viral subtitle format)
       newProj.introHook = {
         enabled: true,
-        text: cleanTitle.toUpperCase(),
+        text: cleanTitle,
         duration: Math.min(2.5, Math.max(1.5, Math.round(cand.duration * 0.08 * 10) / 10)),
-        fontSize: template?.introHook?.fontSize || 54,
-        color: template?.introHook?.color || '#FFE600',
+        fontSize: newProj.subtitleStyle?.fontSize || 54,
+        color: '#FFFFFF',
+        highlightColor: '#FFE600',
+        backgroundColor: 'transparent',
+        outlineWidth: newProj.subtitleStyle?.outlineWidth || 5,
+        outlineColor: newProj.subtitleStyle?.outlineColor || '#000000',
+        fontFamily: newProj.subtitleStyle?.fontFamily || 'Montserrat',
         transition: 'pop_in',
       };
 
@@ -91,45 +143,30 @@ export async function POST(req: NextRequest) {
           type: 'video',
           trackId: newProj.tracks[0].id,
           start: 0,
-          duration: cand.duration,
-          sourceStart: cand.start,
-          sourceDuration: cand.duration,
-          mediaPath: baseProject.source.path,
+          duration: probe.duration || cand.duration,
+          sourceStart: hasCutFile ? 0 : cand.start,
+          sourceDuration: probe.duration || cand.duration,
+          mediaPath: activeSourcePath,
         },
       ];
 
-      // Pre-fill Subtitles from existing candidate words / base transcript
+      // Pre-fill Subtitles with intelligent punctuation & pause-aware segmentation
       const shiftedSubtitles: SubtitleItem[] = [];
 
       if (cand.words && cand.words.length > 0) {
-        // Group candidate words into 3-4 word phrase cues
-        const wordsPerCue = newProj.subtitleStyle.maxWordsPerLine || 4;
-        let currentCueWords: SubtitleWord[] = [];
-        let cueIdx = 1;
+        const shiftedWords = cand.words.map((w) => ({
+          word: w.word,
+          start: Math.max(0, Math.round((w.start - cand.start) * 1000) / 1000),
+          end: Math.min(cand.duration, Math.round((w.end - cand.start) * 1000) / 1000),
+        }));
 
-        for (let wIdx = 0; wIdx < cand.words.length; wIdx++) {
-          const rawWord = cand.words[wIdx];
-          const shiftedStart = Math.max(0, Math.round((rawWord.start - cand.start) * 1000) / 1000);
-          const shiftedEnd = Math.min(cand.duration, Math.round((rawWord.end - cand.start) * 1000) / 1000);
+        const segmented = smartSegmentWords(shiftedWords, {
+          maxWordsPerCue: newProj.subtitleStyle.maxWordsPerLine || 4,
+          maxDurationSec: 2.8,
+          pauseThresholdSec: 0.35,
+        });
 
-          currentCueWords.push({
-            word: rawWord.word,
-            start: shiftedStart,
-            end: shiftedEnd,
-          });
-
-          const isLast = wIdx === cand.words.length - 1;
-          if (currentCueWords.length >= wordsPerCue || isLast) {
-            shiftedSubtitles.push({
-              id: `sub_${cueIdx++}`,
-              start: currentCueWords[0].start,
-              end: currentCueWords[currentCueWords.length - 1].end,
-              text: currentCueWords.map((cw) => cw.word).join(' '),
-              words: [...currentCueWords],
-            });
-            currentCueWords = [];
-          }
-        }
+        shiftedSubtitles.push(...segmented);
       } else if (baseProject.subtitles && baseProject.subtitles.length > 0) {
         // Fallback: filter base subtitles
         const overlapping = baseProject.subtitles.filter(

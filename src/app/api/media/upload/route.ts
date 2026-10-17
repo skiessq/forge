@@ -24,10 +24,21 @@ export async function POST(req: NextRequest) {
     const ext = path.extname(originalName) || '.mp4';
     const destinationPath = path.join(projectDir, `source${ext}`);
 
-    // Stream file buffer to disk
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(destinationPath, buffer);
+    // Stream file directly to disk in chunks to handle 2.8GB+ videos without memory bottlenecks
+    const writeStream = fs.createWriteStream(destinationPath);
+    // @ts-ignore
+    const stream = file.stream();
+    const reader = stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      writeStream.write(Buffer.from(value));
+    }
+    writeStream.end();
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', () => resolve(true));
+      writeStream.on('error', reject);
+    });
 
     // Probe media with ffprobe
     const probe = probeMedia(destinationPath);

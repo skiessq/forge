@@ -27,6 +27,7 @@ export default function SubtitleEditor() {
   const [job, setJob] = useState<JobProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [colorTarget, setColorTarget] = useState<{ subId: string; wordIdx: number } | null>(null);
+  const [whisperModel, setWhisperModel] = useState<'small' | 'base' | 'medium'>('small');
 
   if (!project) return null;
 
@@ -39,7 +40,7 @@ export default function SubtitleEditor() {
       const res = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: project.id, modelSize: 'base' }),
+        body: JSON.stringify({ projectId: project.id, modelSize: whisperModel }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed to start transcription');
@@ -183,6 +184,39 @@ export default function SubtitleEditor() {
       {/* SUBTAB 1: TRANSCRIPT */}
       {subTab === 'transcript' && (
         <div className="space-y-3">
+          {/* Whisper Model Selector */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Whisper AI Accuracy Model
+              </span>
+              <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                GPU Accelerated
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+              {[
+                { id: 'small', label: 'Small (Recommended)', desc: 'High accuracy for gaming & slang' },
+                { id: 'base', label: 'Base', desc: 'Fastest transcription' },
+                { id: 'medium', label: 'Medium', desc: 'Studio accuracy' },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setWhisperModel(m.id as any)}
+                  className={`p-2 rounded-lg text-left transition border ${
+                    whisperModel === m.id
+                      ? 'bg-blue-600/20 border-blue-500 text-white shadow-sm'
+                      : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="font-bold text-[11px] leading-tight">{m.label}</div>
+                  <div className="text-[9px] text-slate-500 truncate mt-0.5">{m.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Auto-Transcribe Button */}
           <button
             onClick={handleAutoTranscribe}
@@ -192,12 +226,12 @@ export default function SubtitleEditor() {
             {isTranscribing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Transcribing Speech with Whisper AI...</span>
+                <span>Transcribing Speech with Whisper AI ({whisperModel})...</span>
               </>
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                <span>Auto-Generate Subtitles (Whisper)</span>
+                <span>Auto-Generate Subtitles ({whisperModel.toUpperCase()})</span>
               </>
             )}
           </button>
@@ -533,8 +567,15 @@ export default function SubtitleEditor() {
                     }`}
                   >
                     <div>
-                      <div className="font-bold capitalize text-xs">
-                        {key.replace('_', ' ')}
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold capitalize text-xs">
+                          {key.replace('_', ' ')}
+                        </span>
+                        {key === 'viral_clean' && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                            Viral Shorts / TikTok
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-400 mt-0.5">
                         {preset.fontFamily} • {preset.animation.replace('_', ' ')}

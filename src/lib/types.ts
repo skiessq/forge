@@ -167,6 +167,7 @@ export interface TimelineClip {
   effects?: EffectConfig[];
   keyframes?: TransformKeyframe[];
   speed?: number; // 0.5 .. 2.0
+  layoutOverride?: LayoutConfig;
 }
 
 export interface TimelineTrack {
@@ -205,6 +206,8 @@ export interface IntroHookConfig {
   transition?: IntroHookTransition;
   positionX?: number; // normalized 0..1 (default 0.5 center)
   positionY?: number; // normalized 0..1 (default 0.22)
+  stayWholeVideo?: boolean;
+  wordsPerLine?: number; // 0: auto, -1: single line (nowrap), n: words per line
 }
 
 export interface WatermarkConfig {

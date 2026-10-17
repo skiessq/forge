@@ -236,13 +236,19 @@ export default function Timeline() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedClipId(clip.id);
+                    if (containerRef.current) {
+                      const rect = containerRef.current.getBoundingClientRect();
+                      const clickX = e.clientX - rect.left + containerRef.current.scrollLeft;
+                      const newTime = Math.max(0, Math.min(duration, clickX / zoom));
+                      setCurrentTime(newTime);
+                    }
                   }}
                   style={{
                     position: 'absolute',
                     left: `${clipLeft}px`,
                     width: `${clipWidth}px`,
                   }}
-                  className={`h-full rounded-md border flex items-center px-2.5 gap-2 transition ${
+                  className={`h-full rounded-md border flex items-center px-2.5 gap-2 transition cursor-pointer ${
                     isSelected
                       ? 'bg-blue-600/30 border-blue-400 shadow-md ring-1 ring-blue-400'
                       : 'bg-blue-950/60 border-blue-500/40 hover:border-blue-400'
@@ -250,8 +256,15 @@ export default function Timeline() {
                 >
                   <Film className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                   <span className="text-xs text-blue-100 font-medium truncate">
-                    {clip.id.includes('split') ? 'Video Segment' : project.source.originalFileName}
+                    {clip.id.includes('split')
+                      ? `Segment ${(videoTrack?.clips.indexOf(clip) ?? 0) + 1}`
+                      : project.source.originalFileName}
                   </span>
+                  {clip.layoutOverride && (
+                    <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.2 rounded font-mono font-bold shrink-0">
+                      Framing
+                    </span>
+                  )}
                   <span className="ml-auto font-mono text-[10px] text-blue-300/80">
                     {clip.duration.toFixed(1)}s
                   </span>
@@ -283,15 +296,19 @@ export default function Timeline() {
               return (
                 <div
                   key={sub.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCurrentTime(sub.start);
+                  }}
                   style={{
                     position: 'absolute',
                     left: `${subLeft}px`,
                     width: `${subWidth}px`,
                   }}
-                  className={`h-6 rounded border px-1.5 flex items-center text-[10px] font-medium truncate transition ${
+                  className={`h-6 rounded border px-1.5 flex items-center text-[10px] font-medium truncate transition cursor-pointer ${
                     isActive
-                      ? 'bg-amber-500/40 border-amber-400 text-white'
-                      : 'bg-amber-950/40 border-amber-500/30 text-amber-200'
+                      ? 'bg-amber-500/40 border-amber-400 text-white shadow-sm'
+                      : 'bg-amber-950/40 border-amber-500/30 text-amber-200 hover:bg-amber-900/60'
                   }`}
                 >
                   <Type className="w-2.5 h-2.5 mr-1 text-amber-400 shrink-0" />

@@ -16,6 +16,7 @@ import {
   PanelBottomOpen,
 } from 'lucide-react';
 import SafeZoneGuide from './SafeZoneGuide';
+import { formatHookLines } from '@/lib/utils/hookText';
 
 interface SnapGuideInfo {
   type: 'horizontal' | 'vertical';
@@ -78,6 +79,7 @@ export default function PreviewPlayer() {
     setSelectedRegionId,
     selectedOverlayType,
     setSelectedOverlayType,
+    selectedClipId,
     safeZoneVisible,
     isTimelineVisible,
     toggleTimeline,
@@ -99,8 +101,40 @@ export default function PreviewPlayer() {
   const [dragMode, setDragMode] = useState<'region' | 'subtitle' | 'hook' | null>(null);
   const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuideInfo[]>([]);
   const dragStartRef = useRef<DragState | null>(null);
+  const isSelfUpdatingRef = useRef(false);
+  const rafMoveRef = useRef<number | null>(null);
 
-  if (!project) return null;
+  const videoTrack = project?.tracks?.find((t) => t.type === 'video');
+  const activeClip = videoTrack?.clips?.find(
+    (c) => (selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration)
+  ) || videoTrack?.clips?.[0];
+
+  const hasMultipleClips = (videoTrack?.clips?.length || 0) > 1;
+  const effectiveLayout = (hasMultipleClips && activeClip?.layoutOverride)
+    ? activeClip.layoutOverride
+    : project?.layout;
+
+  const getMediaTimeFromTimeline = useCallback(
+    (t: number) => {
+      if (!videoTrack || !videoTrack.clips.length) return t;
+      const clip = videoTrack.clips.find((c) => t >= c.start && t < c.start + c.duration) || videoTrack.clips[0];
+      return clip.sourceStart + Math.max(0, t - clip.start);
+    },
+    [videoTrack]
+  );
+
+  const getTimelineTimeFromMedia = useCallback(
+    (mediaT: number) => {
+      if (!videoTrack || !videoTrack.clips.length) return mediaT;
+      const clip = videoTrack.clips.find(
+        (c) => mediaT >= c.sourceStart && mediaT <= c.sourceStart + c.duration
+      ) || videoTrack.clips[0];
+      return clip.start + Math.max(0, mediaT - clip.sourceStart);
+    },
+    [videoTrack]
+  );
+
+  if (!project || !effectiveLayout) return null;
 
   const videoSrc = `/api/media/serve?path=${encodeURIComponent(project.source.path)}`;
   const secondarySrc = project.layout.secondaryMediaPath
@@ -109,6 +143,38 @@ export default function PreviewPlayer() {
 
   const canvasWidth = project.canvas.width;
   const canvasHeight = project.canvas.height;
+
+  // Track dynamic container width for pixel-perfect 1:1 proportional font scaling matching exported 1080p ASS video
+  const [containerWidth, setContainerWidth] = useState<number>(360);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.clientWidth;
+        if (w > 50) setContainerWidth(w);
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const previewScale = (containerWidth || 360) / (canvasWidth || 1080);
+  const canvasScale = (canvasWidth || 1080) / 1080;
+
+  // 1:1 Synchronized subtitle sizing between preview and export
+  const exportSubtitleFontSize = Math.round((project.subtitleStyle.fontSize || 54) * 2.25 * canvasScale);
+  const previewSubtitleFontSize = Math.max(14, Math.round(exportSubtitleFontSize * previewScale));
+  const exportSubtitleOutlineWidth = Math.max(2, Math.round((project.subtitleStyle.outlineWidth ?? 4) * 0.9 * canvasScale));
+  const previewSubtitleOutlineWidth = Math.max(1, Math.round(exportSubtitleOutlineWidth * previewScale));
+
+  // 1:1 Synchronized intro hook sizing between preview and export
+  const exportHookFontSize = Math.round((project.introHook?.fontSize || 42) * 2.35 * canvasScale);
+  const previewHookFontSize = Math.max(12, Math.round(exportHookFontSize * previewScale));
+  const exportHookOutlineWidth = Math.max(2, Math.round((project.introHook?.outlineWidth ?? 4) * 0.9 * canvasScale));
+  const previewHookOutlineWidth = Math.max(1, Math.round(exportHookOutlineWidth * previewScale));
 
   // 1. Play / Pause Synchronization
   useEffect(() => {
@@ -152,7 +218,7 @@ export default function PreviewPlayer() {
         const vH = video.videoHeight;
 
         // Render blurred background if layout is blurred_background_fit
-        if (project.layout.templateId === 'blurred_background_fit') {
+        if (effectiveLayout.templateId === 'blurred_background_fit') {
           ctx.save();
           ctx.filter = 'blur(28px) brightness(0.65)';
           // Draw video covering whole canvas
@@ -176,8 +242,8 @@ export default function PreviewPlayer() {
           ctx.drawImage(video, fgX, fgY, targetW, targetH);
           ctx.restore();
         } else {
-          // Render layout regions
-          for (const region of project.layout.regions) {
+          // Render layout regions with effective layout (supporting per-clip splits & crops)
+          for (const region of effectiveLayout.regions) {
             const bounds = region.targetBounds;
             const dx = bounds.x * canvas.width;
             const dy = bounds.y * canvas.height;
@@ -253,12 +319,36 @@ export default function PreviewPlayer() {
           }
 
           // Render divider line for split layouts
-          if (project.layout.dividerWidth > 0 && project.layout.regions.length >= 2) {
-            const divY = (project.layout.splitRatio || 0.5) * canvas.height;
-            const divH = project.layout.dividerWidth * (canvas.height / 1920) * 1.5;
-            ctx.fillStyle = project.layout.dividerColor || '#3B82F6';
+          if (effectiveLayout.dividerWidth > 0 && effectiveLayout.regions.length >= 2) {
+            const divY = (effectiveLayout.splitRatio || 0.5) * canvas.height;
+            const divH = effectiveLayout.dividerWidth * (canvas.height / 1920) * 1.5;
+            ctx.fillStyle = effectiveLayout.dividerColor || '#3B82F6';
             ctx.fillRect(0, divY - divH / 2, canvas.width, divH);
           }
+        }
+      }
+
+      // High-precision 60 FPS playhead tracking during playback
+      if (isPlaying && video && !video.paused) {
+        const curMedia = video.currentTime;
+        const curTimeline = getTimelineTimeFromMedia(curMedia);
+
+        if (curTimeline >= duration) {
+          video.pause();
+          setIsPlaying(false);
+          const startMedia = getMediaTimeFromTimeline(0);
+          video.currentTime = startMedia;
+          setCurrentTime(0);
+        } else {
+          // If split clips have a non-contiguous jump, jump video.currentTime
+          if (activeClip && curMedia >= activeClip.sourceStart + activeClip.duration) {
+            const nextClip = videoTrack?.clips?.find((c) => c.start >= activeClip.start + activeClip.duration);
+            if (nextClip) {
+              video.currentTime = nextClip.sourceStart;
+            }
+          }
+          isSelfUpdatingRef.current = true;
+          setCurrentTime(curTimeline);
         }
       }
 
@@ -267,26 +357,71 @@ export default function PreviewPlayer() {
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [project, selectedRegionId, selectedOverlayType]);
+  }, [
+    project,
+    effectiveLayout,
+    selectedRegionId,
+    selectedOverlayType,
+    isPlaying,
+    activeClip,
+    duration,
+    getMediaTimeFromTimeline,
+    getTimelineTimeFromMedia,
+    setIsPlaying,
+    setCurrentTime,
+    videoTrack,
+  ]);
+
+  // Sync initial video position to timeline start
+  useEffect(() => {
+    const v1 = primaryVideoRef.current;
+    if (v1 && !isPlaying) {
+      const target = getMediaTimeFromTimeline(0);
+      if (Math.abs(v1.currentTime - target) > 0.05) {
+        v1.currentTime = target;
+      }
+    }
+  }, [project?.id, getMediaTimeFromTimeline]);
+
+  // Direct video playhead seek synchronization when currentTime changes (timeline click/scrub)
+  useEffect(() => {
+    const v1 = primaryVideoRef.current;
+    if (!v1 || isDragging) return;
+
+    if (isSelfUpdatingRef.current) {
+      isSelfUpdatingRef.current = false;
+      return;
+    }
+
+    const targetMediaTime = getMediaTimeFromTimeline(currentTime);
+    if (Math.abs(v1.currentTime - targetMediaTime) > 0.05) {
+      v1.currentTime = targetMediaTime;
+    }
+    if (secondaryVideoRef.current) {
+      secondaryVideoRef.current.currentTime = currentTime;
+    }
+  }, [currentTime, getMediaTimeFromTimeline, isDragging]);
 
   // 3. Playhead Seeking and Throttled Time Updates
   const handleTimeUpdate = () => {
     const v1 = primaryVideoRef.current;
-    if (v1 && !isDragging) {
-      setCurrentTime(v1.currentTime);
+    if (v1 && !isDragging && !isPlaying) {
+      const curTimeline = getTimelineTimeFromMedia(v1.currentTime);
+      setCurrentTime(curTimeline);
     }
   };
 
   const handleSeek = (newTime: number) => {
     const v1 = primaryVideoRef.current;
     const v2 = secondaryVideoRef.current;
+    const targetMedia = getMediaTimeFromTimeline(newTime);
     if (v1) {
-      v1.currentTime = newTime;
-      setCurrentTime(newTime);
+      v1.currentTime = targetMedia;
     }
     if (v2) {
       v2.currentTime = newTime;
     }
+    setCurrentTime(newTime);
   };
 
   const stepFrame = (frames: number) => {
@@ -304,8 +439,8 @@ export default function PreviewPlayer() {
     const clickXNorm = (e.clientX - rect.left) / rect.width;
     const clickYNorm = (e.clientY - rect.top) / rect.height;
 
-    // Find region under cursor
-    const clickedRegion = project.layout.regions.find((r) => {
+    // Find region under cursor in effective layout
+    const clickedRegion = effectiveLayout.regions.find((r) => {
       const b = r.targetBounds;
       return (
         clickXNorm >= b.x &&
@@ -409,104 +544,105 @@ export default function PreviewPlayer() {
     };
   };
 
-  // Unified MouseMove handler with Barrier Snapping and Pass-Through Resistance
+  // Unified MouseMove handler with RAF throttling, soft snapping, and effectiveLayout
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isDragging || !dragStartRef.current) return;
-    const drag = dragStartRef.current;
-    const isSnapping = snappingEnabled && !e.shiftKey;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const shiftKey = e.shiftKey;
 
-    if (drag.mode === 'subtitle') {
-      const deltaX = e.clientX - drag.mouseX;
-      const deltaY = e.clientY - drag.mouseY;
-      const vDir = project.subtitleStyle.position === 'top' ? 1 : -1;
-      let rawH = drag.initH + deltaX;
-      let rawV = drag.initV + deltaY * vDir;
+    if (rafMoveRef.current) return;
+    rafMoveRef.current = requestAnimationFrame(() => {
+      rafMoveRef.current = null;
+      if (!dragStartRef.current) return;
+      const drag = dragStartRef.current;
+      const isSnapping = snappingEnabled && !shiftKey;
 
-      const guides: SnapGuideInfo[] = [];
+      if (drag.mode === 'subtitle') {
+        const deltaX = clientX - drag.mouseX;
+        const deltaY = clientY - drag.mouseY;
+        const vDir = project.subtitleStyle.position === 'top' ? 1 : -1;
+        let rawH = drag.initH + deltaX;
+        let rawV = drag.initV + deltaY * vDir;
 
-      if (isSnapping) {
-        // Horizontal Center Magnet (0px offset)
-        if (drag.startAtCenterH) {
-          if (Math.abs(rawH) > 16) {
-            drag.startAtCenterH = false;
+        const guides: SnapGuideInfo[] = [];
+
+        if (isSnapping) {
+          // Soft Horizontal Center Magnet
+          if (drag.startAtCenterH) {
+            if (Math.abs(rawH) > 12) drag.startAtCenterH = false;
+          } else if (!drag.unlockedCenterH && Math.abs(rawH) <= 8) {
+            rawH = 0;
+            guides.push({
+              type: 'vertical',
+              percent: 50,
+              label: 'Captions Centered',
+            });
+          } else if (Math.abs(rawH) > 20) {
+            drag.unlockedCenterH = true;
           }
-        } else if (!drag.unlockedCenterH && Math.abs(rawH) <= 12) {
-          rawH = 0;
-          guides.push({
-            type: 'vertical',
-            percent: 50,
-            label: 'Captions Centered',
-          });
-        } else if (Math.abs(rawH) > 28) {
-          drag.unlockedCenterH = true;
+
+          if (Math.abs(rawV) <= 6) {
+            rawV = 0;
+          }
         }
 
-        // Vertical reset magnet (0px offset)
-        if (Math.abs(rawV) <= 10) {
-          rawV = 0;
-        }
+        setActiveSnapGuides(guides);
+        updateSubtitleStyle({
+          horizontalOffset: Math.max(-150, Math.min(150, Math.round(rawH))),
+          verticalOffset: Math.max(-150, Math.min(150, Math.round(rawV))),
+        });
+        return;
       }
 
-      setActiveSnapGuides(guides);
-      updateSubtitleStyle({
-        horizontalOffset: Math.max(-150, Math.min(150, Math.round(rawH))),
-        verticalOffset: Math.max(-150, Math.min(150, Math.round(rawV))),
-      });
-      return;
-    }
+      if (drag.mode === 'hook') {
+        const deltaX = clientX - drag.mouseX;
+        const deltaY = clientY - drag.mouseY;
+        const cW = drag.containerWidth || 400;
+        const cH = drag.containerHeight || 700;
+        let rawX = drag.initNormX + deltaX / cW;
+        let rawY = drag.initNormY + deltaY / cH;
 
-    if (drag.mode === 'hook') {
-      const deltaX = e.clientX - drag.mouseX;
-      const deltaY = e.clientY - drag.mouseY;
-      const cW = drag.containerWidth || 400;
-      const cH = drag.containerHeight || 700;
-      let rawX = drag.initNormX + deltaX / cW;
-      let rawY = drag.initNormY + deltaY / cH;
+        const guides: SnapGuideInfo[] = [];
 
-      const guides: SnapGuideInfo[] = [];
-
-      if (isSnapping) {
-        // Horizontal Center Magnet (50%)
-        if (drag.startAtCenterH) {
-          if (Math.abs(rawX - 0.5) > 0.04) {
-            drag.startAtCenterH = false;
+        if (isSnapping) {
+          if (drag.startAtCenterH) {
+            if (Math.abs(rawX - 0.5) > 0.04) drag.startAtCenterH = false;
+          } else if (!drag.unlockedCenterH && Math.abs(rawX - 0.5) <= 0.025) {
+            rawX = 0.5;
+            guides.push({
+              type: 'vertical',
+              percent: 50,
+              label: 'Hook Centered',
+            });
+          } else if (Math.abs(rawX - 0.5) > 0.06) {
+            drag.unlockedCenterH = true;
           }
-        } else if (!drag.unlockedCenterH && Math.abs(rawX - 0.5) <= 0.035) {
-          rawX = 0.5;
-          guides.push({
-            type: 'vertical',
-            percent: 50,
-            label: 'Hook Centered',
-          });
-        } else if (Math.abs(rawX - 0.5) > 0.07) {
-          drag.unlockedCenterH = true;
+
+          if (Math.abs(rawY - 0.22) <= 0.02) {
+            rawY = 0.22;
+            guides.push({
+              type: 'horizontal',
+              percent: 22,
+              label: 'Top Safe Zone Guide',
+            });
+          }
         }
 
-        // Top Guide Magnet (22%)
-        if (Math.abs(rawY - 0.22) <= 0.025) {
-          rawY = 0.22;
-          guides.push({
-            type: 'horizontal',
-            percent: 22,
-            label: 'Top Safe Zone Guide',
-          });
-        }
+        setActiveSnapGuides(guides);
+        updateIntroHook({
+          positionX: parseFloat(Math.max(0.08, Math.min(0.92, rawX)).toFixed(3)),
+          positionY: parseFloat(Math.max(0.06, Math.min(0.94, rawY)).toFixed(3)),
+        });
+        return;
       }
 
-      setActiveSnapGuides(guides);
-      updateIntroHook({
-        positionX: parseFloat(Math.max(0.08, Math.min(0.92, rawX)).toFixed(3)),
-        positionY: parseFloat(Math.max(0.06, Math.min(0.94, rawY)).toFixed(3)),
-      });
-      return;
-    }
+      if (drag.mode === 'region') {
+        const deltaPxX = clientX - drag.mouseX;
+        const deltaPxY = clientY - drag.mouseY;
 
-    if (drag.mode === 'region') {
-      const deltaPxX = e.clientX - drag.mouseX;
-      const deltaPxY = e.clientY - drag.mouseY;
-
-      const currentRegion = project.layout.regions.find((r) => r.id === drag.regionId);
-      if (!currentRegion) return;
+        const currentRegion = effectiveLayout.regions.find((r) => r.id === drag.regionId);
+        if (!currentRegion) return;
 
       const vW = primaryVideoRef.current?.videoWidth || 1920;
       const vH = primaryVideoRef.current?.videoHeight || 1080;
@@ -644,9 +780,14 @@ export default function PreviewPlayer() {
         y: parseFloat(newCropY.toFixed(3)),
       });
     }
+    });
   };
 
   const handleMouseUp = () => {
+    if (rafMoveRef.current) {
+      cancelAnimationFrame(rafMoveRef.current);
+      rafMoveRef.current = null;
+    }
     setActiveSnapGuides([]);
     setIsDragging(false);
     setDragMode(null);
@@ -668,44 +809,54 @@ export default function PreviewPlayer() {
     (s) => currentTime >= s.start && currentTime <= s.end
   );
 
-  // Helper for Intro Hook Transition Classes
-  const getHookTransitionClass = (transition?: string) => {
-    switch (transition) {
-      case 'zoom_pop':
-        return 'anim-hook-zoom_pop';
-      case 'slide_down':
-        return 'anim-hook-slide_down';
-      case 'glitch':
-        return 'anim-hook-glitch';
-      case 'fade_zoom':
-        return 'anim-hook-fade_zoom';
-      case 'pop_in':
-        return 'anim-hook-pop_in';
-      case 'bounce_drop':
-      default:
-        return 'anim-hook-bounce_drop';
-    }
+  // Helper for Intro Hook Transition Classes (Entrance & Exit)
+  const getHookTransitionClass = (transition?: string, isLeaving = false) => {
+    const t = transition || 'bounce_drop';
+    return isLeaving ? `anim-hook-exit-${t}` : `anim-hook-${t}`;
   };
 
-  // Helper for rendering Intro Hook Headline with optional highlight punch
-  const renderHookText = (text: string, defaultColor: string, highlightColor?: string) => {
-    if (!highlightColor || highlightColor === defaultColor) return text;
-    if (text.includes('*')) {
-      const parts = text.split('*');
-      return parts.map((part, i) => (
-        <span key={i} style={{ color: i % 2 === 1 ? highlightColor : defaultColor }}>
-          {part}
-        </span>
-      ));
-    }
-    const words = text.split(' ');
-    if (words.length <= 1) return text;
-    return (
-      <>
-        <span style={{ color: highlightColor }}>{words[0]} </span>
-        <span>{words.slice(1).join(' ')}</span>
-      </>
-    );
+  // Helper for rendering Intro Hook Headline with optional highlight punch and multi-line control
+  const renderHookText = (
+    text: string,
+    defaultColor: string,
+    highlightColor?: string,
+    wordsPerLine?: number
+  ) => {
+    const lines = formatHookLines(text, wordsPerLine);
+
+    return lines.map((line, lineIdx) => {
+      let content: React.ReactNode = line;
+      if (highlightColor && highlightColor !== defaultColor && line.includes('*')) {
+        const parts = line.split('*');
+        content = parts.map((part, i) => (
+          <span key={i} style={{ color: i % 2 === 1 ? highlightColor : defaultColor }}>
+            {part}
+          </span>
+        ));
+      } else if (highlightColor && highlightColor !== defaultColor && !text.includes('*') && lineIdx === 0) {
+        const words = line.split(' ');
+        if (words.length > 1) {
+          content = (
+            <>
+              <span style={{ color: highlightColor }}>{words[0]} </span>
+              <span>{words.slice(1).join(' ')}</span>
+            </>
+          );
+        }
+      }
+
+      return (
+        <div
+          key={lineIdx}
+          style={{
+            whiteSpace: wordsPerLine === -1 ? 'nowrap' : 'normal',
+            lineHeight: 1.15,
+          }}
+        >
+          {content}
+        </div>
+      );
+    });
   };
 
   const dynamicMaxHeight = isTimelineVisible ? 'max-h-[68vh]' : 'max-h-[86vh]';
@@ -764,7 +915,7 @@ export default function PreviewPlayer() {
 
           {/* Region Label Indicators */}
           <div className="absolute inset-0 pointer-events-none">
-            {project.layout.regions.map((region) => (
+            {effectiveLayout.regions.map((region) => (
               <div
                 key={region.id}
                 style={{
@@ -894,54 +1045,66 @@ export default function PreviewPlayer() {
             </div>
           )}
 
-          {/* Intro Hook Text (First 1-5 seconds) with Direct Dragging */}
-          {project.introHook?.enabled && currentTime <= (project.introHook.duration || 2.5) && (
-            <div
-              onMouseDown={handleHookMouseDown}
-              style={{
-                position: 'absolute',
-                left: `${(project.introHook.positionX ?? 0.5) * 100}%`,
-                top: `${(project.introHook.positionY ?? 0.22) * 100}%`,
-                transform: 'translate(-50%, -50%)',
-              }}
-              className={`z-30 select-none cursor-move group transition-all duration-75 max-w-[90%] ${
-                selectedOverlayType === 'hook'
-                  ? 'ring-2 ring-amber-400 ring-dashed rounded-2xl bg-amber-950/20 shadow-xl'
-                  : 'hover:ring-1 hover:ring-amber-400/60 rounded-2xl'
-              } ${getHookTransitionClass(project.introHook.transition)}`}
-            >
-              {/* Drag Handle Badge */}
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                <span className="px-2 py-0.5 rounded-md bg-amber-950/90 border border-amber-500/50 text-[10px] text-amber-300 font-bold tracking-wider uppercase flex items-center gap-1 shadow-lg whitespace-nowrap">
-                  <GripHorizontal className="w-3 h-3" />
-                  <span>Drag Hook</span>
-                </span>
-              </div>
-
+          {/* Intro Hook Text with Direct Dragging & Entrance/Exit Transitions */}
+          {project.introHook?.enabled && (() => {
+            const projectDur = videoTrack?.clips?.reduce((acc, c) => acc + c.duration, 0) || project.source.probe?.duration || 30;
+            const hookDur = project.introHook.stayWholeVideo ? projectDur : (project.introHook.duration || 2.5);
+            if (currentTime > hookDur) return null;
+            const isLeaving = currentTime >= hookDur - 0.38;
+            return (
               <div
+                key={isLeaving ? 'hook-exit' : 'hook-enter'}
+                onMouseDown={handleHookMouseDown}
                 style={{
-                  fontFamily: project.introHook.fontFamily || 'Montserrat',
-                  color: project.introHook.color || '#FFE600',
-                  fontSize: `${Math.round((project.introHook.fontSize || 56) * 0.44)}px`,
-                  backgroundColor: project.introHook.backgroundColor || 'rgba(0, 0, 0, 0.75)',
-                  padding: `${(project.introHook.backgroundPadding ?? 12) * 0.4}px ${
-                    (project.introHook.backgroundPadding ?? 16) * 0.6
-                  }px`,
-                  borderRadius: `${(project.introHook.borderRadius ?? 16) * 0.5}px`,
-                  WebkitTextStroke: `${project.introHook.outlineWidth ?? 2}px ${
-                    project.introHook.outlineColor ?? '#000000'
-                  }`,
+                  position: 'absolute',
+                  left: `${(project.introHook.positionX ?? 0.5) * 100}%`,
+                  top: `${(project.introHook.positionY ?? 0.22) * 100}%`,
+                  transform: 'translate(-50%, -50%)',
                 }}
-                className="font-black text-center uppercase tracking-wider drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)]"
+                className={`z-30 select-none cursor-move group transition-all duration-75 ${
+                  project.introHook.wordsPerLine === -1 ? 'max-w-none' : 'max-w-[95%]'
+                } ${
+                  selectedOverlayType === 'hook'
+                    ? 'ring-2 ring-amber-400 ring-dashed rounded-2xl bg-amber-950/20 shadow-xl'
+                    : 'hover:ring-1 hover:ring-amber-400/60 rounded-2xl'
+                } ${getHookTransitionClass(project.introHook.transition, isLeaving)}`}
               >
-                {renderHookText(
-                  project.introHook.text,
-                  project.introHook.color || '#FFE600',
-                  project.introHook.highlightColor
-                )}
+                {/* Drag Handle Badge */}
+                <div className="absolute -top-6 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-950/90 border border-amber-500/50 text-[10px] text-amber-300 font-bold tracking-wider uppercase flex items-center gap-1 shadow-lg whitespace-nowrap">
+                    <GripHorizontal className="w-3 h-3" />
+                    <span>Drag Hook</span>
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    fontFamily: `"${project.subtitleStyle.fontFamily || project.introHook.fontFamily || 'Montserrat'}", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`,
+                    fontWeight: (!project.subtitleStyle.fontFamily || project.subtitleStyle.fontFamily === 'Montserrat') ? 900 : 700,
+                    color: project.introHook.color || '#FFFFFF',
+                    fontSize: `${previewHookFontSize}px`,
+                    backgroundColor: 'transparent',
+                    padding: '4px 12px',
+                    borderRadius: '8px',
+                    WebkitTextStroke: `${previewHookOutlineWidth}px ${
+                      project.introHook.outlineColor ?? '#000000'
+                    }`,
+                    paintOrder: 'stroke fill',
+                    textShadow:
+                      '2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000, 0px 4px 14px rgba(0,0,0,0.95)',
+                  }}
+                  className="text-center uppercase tracking-normal"
+                >
+                  {renderHookText(
+                    project.introHook.text,
+                    project.introHook.color || '#FFFFFF',
+                    project.introHook.highlightColor || project.subtitleStyle.highlightColor || '#FFE600',
+                    project.introHook.wordsPerLine
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Watermark Overlay */}
           {project.watermark?.enabled && (
@@ -993,13 +1156,15 @@ export default function PreviewPlayer() {
 
               <span
                 style={{
-                  fontFamily: project.subtitleStyle.fontFamily || 'Montserrat',
-                  fontSize: `${Math.round((project.subtitleStyle.fontSize || 50) * 0.42)}px`,
+                  fontFamily: `"${project.subtitleStyle.fontFamily || 'Montserrat'}", sans-serif`,
+                  fontWeight: (!project.subtitleStyle.fontFamily || project.subtitleStyle.fontFamily === 'Montserrat') ? 800 : 700,
+                  fontSize: `${previewSubtitleFontSize}px`,
                   color: project.subtitleStyle.primaryColor || '#FFFFFF',
-                  WebkitTextStroke: `${project.subtitleStyle.outlineWidth || 3}px ${
+                  WebkitTextStroke: `${previewSubtitleOutlineWidth}px ${
                     project.subtitleStyle.outlineColor || '#000000'
                   }`,
-                  textTransform: project.subtitleStyle.textTransform || 'uppercase',
+                  paintOrder: 'stroke fill',
+                  textTransform: project.subtitleStyle.textTransform || 'none',
                   backgroundColor: project.subtitleStyle.backgroundColor || undefined,
                   padding: project.subtitleStyle.backgroundPadding
                     ? `${project.subtitleStyle.backgroundPadding * 0.4}px`
@@ -1009,11 +1174,13 @@ export default function PreviewPlayer() {
                     : undefined,
                   lineHeight: project.subtitleStyle.lineSpacing || 1.2,
                 }}
-                className="font-extrabold tracking-wide drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]"
+                className="tracking-normal drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
               >
                 {activeSubtitle.words && activeSubtitle.words.length > 0 ? (
                   activeSubtitle.words.map((w, idx) => {
-                    const isActive = currentTime >= w.start && currentTime <= w.end;
+                    const nextWord = activeSubtitle.words![idx + 1];
+                    const wordEnd = nextWord ? nextWord.start : w.end;
+                    const isActive = currentTime >= w.start && currentTime < wordEnd;
                     const wordColor =
                       w.color ||
                       (isActive && project.subtitleStyle.animation === 'karaoke_highlight'
@@ -1021,7 +1188,7 @@ export default function PreviewPlayer() {
                         : project.subtitleStyle.primaryColor || '#FFFFFF');
 
                     let wordTransform = '';
-                    let wordShadow = '';
+                    let wordShadow = '2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000, 0px 4px 10px rgba(0,0,0,0.9)';
 
                     if (project.subtitleStyle.animation === 'bounce_word' && isActive) {
                       wordTransform = 'translateY(-6px) scale(1.15)';
@@ -1045,7 +1212,11 @@ export default function PreviewPlayer() {
                         style={{
                           color: wordColor,
                           transform: wordTransform,
-                          textShadow: wordShadow || undefined,
+                          textShadow: wordShadow,
+                          WebkitTextStroke: `${previewSubtitleOutlineWidth}px ${
+                            project.subtitleStyle.outlineColor || '#000000'
+                          }`,
+                          paintOrder: 'stroke fill',
                           display: 'inline-block',
                           margin: '0 4px',
                           transition: 'transform 0.08s ease, color 0.08s ease',
@@ -1056,9 +1227,147 @@ export default function PreviewPlayer() {
                     );
                   })
                 ) : (
-                  <span>{activeSubtitle.text}</span>
+                  <span
+                    style={{
+                      WebkitTextStroke: `${previewSubtitleOutlineWidth}px ${
+                        project.subtitleStyle.outlineColor || '#000000'
+                      }`,
+                      paintOrder: 'stroke fill',
+                      textShadow: '2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000, 0px 4px 10px rgba(0,0,0,0.9)',
+                    }}
+                  >
+                    {activeSubtitle.text}
+                  </span>
                 )}
               </span>
+            </div>
+          )}
+
+          {/* Floating Quick Positioning Toolbar for Captions */}
+          {activeSubtitle && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-4 inset-x-3 z-40 flex items-center justify-center pointer-events-auto transition-all"
+            >
+              <div className="bg-slate-950/95 border border-slate-700/80 rounded-2xl px-3 py-1.5 shadow-2xl backdrop-blur-md flex items-center gap-1.5 text-xs text-white">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pr-1 border-r border-slate-800 hidden sm:inline">
+                  Position
+                </span>
+
+                {/* Preset buttons: Top, Mid, Bottom */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSubtitleStyle({ position: 'top', verticalOffset: 0, horizontalOffset: 0 })
+                    }
+                    className={`px-2 py-0.5 rounded-lg font-bold text-[10px] transition ${
+                      project.subtitleStyle.position === 'top'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Top
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSubtitleStyle({ position: 'middle', verticalOffset: 0, horizontalOffset: 0 })
+                    }
+                    className={`px-2 py-0.5 rounded-lg font-bold text-[10px] transition ${
+                      project.subtitleStyle.position === 'middle'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Mid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSubtitleStyle({ position: 'bottom', verticalOffset: 0, horizontalOffset: 0 })
+                    }
+                    className={`px-2 py-0.5 rounded-lg font-bold text-[10px] transition ${
+                      project.subtitleStyle.position === 'bottom'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Bottom
+                  </button>
+                </div>
+
+                <div className="h-3 w-px bg-slate-800 mx-0.5" />
+
+                {/* Nudge buttons: Up, Down, Center */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    title="Nudge Up 10px"
+                    onClick={() =>
+                      updateSubtitleStyle({
+                        verticalOffset: Math.min(150, (project.subtitleStyle.verticalOffset || 0) + 10),
+                      })
+                    }
+                    className="px-1.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition active:scale-95"
+                  >
+                    ▲ Up
+                  </button>
+                  <button
+                    type="button"
+                    title="Nudge Down 10px"
+                    onClick={() =>
+                      updateSubtitleStyle({
+                        verticalOffset: Math.max(-150, (project.subtitleStyle.verticalOffset || 0) - 10),
+                      })
+                    }
+                    className="px-1.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition active:scale-95"
+                  >
+                    ▼ Down
+                  </button>
+                  <button
+                    type="button"
+                    title="Center Captions Horizontally"
+                    onClick={() => updateSubtitleStyle({ horizontalOffset: 0 })}
+                    className="px-1.5 py-0.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-300 text-[10px] font-bold transition active:scale-95"
+                  >
+                    🎯 Center
+                  </button>
+                </div>
+
+                <div className="h-3 w-px bg-slate-800 mx-0.5" />
+
+                {/* Font Size +/- */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    title="Decrease Font Size"
+                    onClick={() =>
+                      updateSubtitleStyle({
+                        fontSize: Math.max(30, (project.subtitleStyle.fontSize || 54) - 4),
+                      })
+                    }
+                    className="px-1.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition active:scale-95"
+                  >
+                    A-
+                  </button>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {project.subtitleStyle.fontSize || 54}
+                  </span>
+                  <button
+                    type="button"
+                    title="Increase Font Size"
+                    onClick={() =>
+                      updateSubtitleStyle({
+                        fontSize: Math.min(84, (project.subtitleStyle.fontSize || 54) + 4),
+                      })
+                    }
+                    className="px-1.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition active:scale-95"
+                  >
+                    A+
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

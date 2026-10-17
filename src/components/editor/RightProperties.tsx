@@ -6,12 +6,30 @@ import { Sliders, Crop, Info, ZoomIn, Move, RotateCcw, ChevronDown, ChevronUp, C
 import { FitMode } from '@/lib/types';
 
 export default function RightProperties() {
-  const { project, selectedRegionId, updateRegionCrop, updateProject, resetRegionCrop } = useEditorStore();
+  const {
+    project,
+    selectedRegionId,
+    updateRegionCrop,
+    updateProject,
+    resetRegionCrop,
+    selectedClipId,
+    currentTime,
+  } = useEditorStore();
   const [showAdvancedDimensions, setShowAdvancedDimensions] = useState(false);
 
   if (!project) return null;
 
-  const selectedRegion = project.layout.regions.find((r) => r.id === selectedRegionId);
+  const videoTrack = project.tracks?.find((t) => t.type === 'video');
+  const activeClip = videoTrack?.clips?.find(
+    (c) => (selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration)
+  ) || videoTrack?.clips?.[0];
+
+  const hasMultipleClips = (videoTrack?.clips?.length || 0) > 1;
+  const effectiveLayout = (hasMultipleClips && activeClip?.layoutOverride)
+    ? activeClip.layoutOverride
+    : project.layout;
+
+  const selectedRegion = effectiveLayout.regions.find((r) => r.id === selectedRegionId);
   const probe = project.source.probe;
 
   // Calculate current zoom factor based on crop width
@@ -122,6 +140,28 @@ export default function RightProperties() {
       {/* Region Crop & Framing Inspector */}
       {selectedRegion ? (
         <div className="space-y-4">
+          {hasMultipleClips && activeClip && (
+            <div className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 text-[11px] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-blue-300">
+                  {activeClip.id.includes('split') ? 'Video Segment' : 'Clip 1'} ({activeClip.start.toFixed(1)}s - {(activeClip.start + activeClip.duration).toFixed(1)}s)
+                </span>
+                {activeClip.layoutOverride ? (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                    Segment Framing
+                  </span>
+                ) : (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                    Inheriting Default
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                Split clip selected: framing & zooms adjust this segment independently!
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <span className="font-semibold text-white">{selectedRegion.label}</span>
             <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -375,6 +415,15 @@ export default function RightProperties() {
                   key={mode}
                   onClick={() => {
                     updateProject((draft) => {
+                      const vTrk = draft.tracks.find((t) => t.type === 'video');
+                      const tgt = vTrk?.clips.find((c) =>
+                        selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration
+                      );
+                      if (tgt && vTrk && vTrk.clips.length > 1) {
+                        if (!tgt.layoutOverride) tgt.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+                        const reg = tgt.layoutOverride?.regions.find((r) => r.id === selectedRegion.id);
+                        if (reg) reg.fit = mode;
+                      }
                       const reg = draft.layout.regions.find((r) => r.id === selectedRegion.id);
                       if (reg) reg.fit = mode;
                       return draft;
@@ -405,9 +454,19 @@ export default function RightProperties() {
               step="2"
               value={selectedRegion.borderRadius || 0}
               onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
                 updateProject((draft) => {
+                  const vTrk = draft.tracks.find((t) => t.type === 'video');
+                  const tgt = vTrk?.clips.find((c) =>
+                    selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration
+                  );
+                  if (tgt && vTrk && vTrk.clips.length > 1) {
+                    if (!tgt.layoutOverride) tgt.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+                    const reg = tgt.layoutOverride?.regions.find((r) => r.id === selectedRegion.id);
+                    if (reg) reg.borderRadius = val;
+                  }
                   const reg = draft.layout.regions.find((r) => r.id === selectedRegion.id);
-                  if (reg) reg.borderRadius = parseInt(e.target.value, 10);
+                  if (reg) reg.borderRadius = val;
                   return draft;
                 });
               }}

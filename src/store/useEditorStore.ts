@@ -214,13 +214,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   updateRegionCrop: (regionId, cropUpdate) => {
     get().updateProject((draft) => {
+      const selectedClipId = get().selectedClipId;
+      const curTime = get().currentTime;
+      const vTrack = draft.tracks.find((t) => t.type === 'video');
+      const targetClip = vTrack?.clips.find((c) =>
+        selectedClipId ? c.id === selectedClipId : curTime >= c.start && curTime < c.start + c.duration
+      );
+
+      const newCrop = {
+        x: cropUpdate.x !== undefined ? Math.max(-2, Math.min(2, cropUpdate.x)) : undefined,
+        y: cropUpdate.y !== undefined ? Math.max(-2, Math.min(2, cropUpdate.y)) : undefined,
+        width: cropUpdate.width !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.width)) : undefined,
+        height: cropUpdate.height !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.height)) : undefined,
+      };
+
+      // 1. If multiple clips exist, save to target clip's layoutOverride
+      if (targetClip && vTrack && vTrack.clips.length > 1) {
+        if (!targetClip.layoutOverride) {
+          targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+        }
+        const clipRegion = targetClip.layoutOverride?.regions.find((r) => r.id === regionId);
+        if (clipRegion) {
+          clipRegion.crop = {
+            x: newCrop.x !== undefined ? newCrop.x : clipRegion.crop.x,
+            y: newCrop.y !== undefined ? newCrop.y : clipRegion.crop.y,
+            width: newCrop.width !== undefined ? newCrop.width : clipRegion.crop.width,
+            height: newCrop.height !== undefined ? newCrop.height : clipRegion.crop.height,
+          };
+        }
+      }
+
+      // 2. Also keep global project layout in sync
       const region = draft.layout.regions.find((r) => r.id === regionId);
       if (region) {
         region.crop = {
-          x: cropUpdate.x !== undefined ? Math.max(-2, Math.min(2, cropUpdate.x)) : region.crop.x,
-          y: cropUpdate.y !== undefined ? Math.max(-2, Math.min(2, cropUpdate.y)) : region.crop.y,
-          width: cropUpdate.width !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.width)) : region.crop.width,
-          height: cropUpdate.height !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.height)) : region.crop.height,
+          x: newCrop.x !== undefined ? newCrop.x : region.crop.x,
+          y: newCrop.y !== undefined ? newCrop.y : region.crop.y,
+          width: newCrop.width !== undefined ? newCrop.width : region.crop.width,
+          height: newCrop.height !== undefined ? newCrop.height : region.crop.height,
         };
       }
       return draft;
@@ -229,40 +260,64 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   zoomRegion: (regionId, zoomFactor) => {
     get().updateProject((draft) => {
-      const region = draft.layout.regions.find((r) => r.id === regionId);
-      if (region) {
+      const selectedClipId = get().selectedClipId;
+      const curTime = get().currentTime;
+      const vTrack = draft.tracks.find((t) => t.type === 'video');
+      const targetClip = vTrack?.clips.find((c) =>
+        selectedClipId ? c.id === selectedClipId : curTime >= c.start && curTime < c.start + c.duration
+      );
+
+      const applyZoom = (reg: any) => {
         const canvasW = draft.canvas.width;
         const canvasH = draft.canvas.height;
-        const targetAspect = (canvasW * region.targetBounds.width) / Math.max(1, canvasH * region.targetBounds.height);
+        const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
         const srcW = draft.source.probe?.width || 1920;
         const srcH = draft.source.probe?.height || 1080;
         const srcAspect = srcW / srcH;
 
-        const currentW = region.crop.width;
+        const currentW = reg.crop.width;
         const newW = Math.max(0.05, Math.min(2.5, currentW / zoomFactor));
         const newH = (newW * srcAspect) / targetAspect;
 
         // Keep center anchored
-        const centerX = region.crop.x + currentW / 2;
-        const centerY = region.crop.y + region.crop.height / 2;
-        region.crop = {
+        const centerX = reg.crop.x + currentW / 2;
+        const centerY = reg.crop.y + reg.crop.height / 2;
+        reg.crop = {
           x: parseFloat((centerX - newW / 2).toFixed(3)),
           y: parseFloat((centerY - newH / 2).toFixed(3)),
           width: parseFloat(newW.toFixed(3)),
           height: parseFloat(newH.toFixed(3)),
         };
+      };
+
+      if (targetClip && vTrack && vTrack.clips.length > 1) {
+        if (!targetClip.layoutOverride) {
+          targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+        }
+        const clipRegion = targetClip.layoutOverride?.regions.find((r) => r.id === regionId);
+        if (clipRegion) applyZoom(clipRegion);
       }
+
+      const region = draft.layout.regions.find((r) => r.id === regionId);
+      if (region) applyZoom(region);
+
       return draft;
     }, false);
   },
 
   resetRegionCrop: (regionId) => {
     get().updateProject((draft) => {
-      const region = draft.layout.regions.find((r) => r.id === regionId);
-      if (region) {
+      const selectedClipId = get().selectedClipId;
+      const curTime = get().currentTime;
+      const vTrack = draft.tracks.find((t) => t.type === 'video');
+      const targetClip = vTrack?.clips.find((c) =>
+        selectedClipId ? c.id === selectedClipId : curTime >= c.start && curTime < c.start + c.duration
+      );
+
+      const applyReset = (reg: any) => {
         const canvasW = draft.canvas.width;
         const canvasH = draft.canvas.height;
-        const targetAspect = (canvasW * region.targetBounds.width) / Math.max(1, canvasH * region.targetBounds.height);
+        const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
         const srcW = draft.source.probe?.width || 1920;
         const srcH = draft.source.probe?.height || 1080;
         const srcAspect = srcW / srcH;
@@ -274,13 +329,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           w = (h * targetAspect) / srcAspect;
         }
 
-        region.crop = {
+        reg.crop = {
           x: parseFloat(((1 - w) / 2).toFixed(3)),
           y: parseFloat(((1 - h) / 2).toFixed(3)),
           width: parseFloat(w.toFixed(3)),
           height: parseFloat(h.toFixed(3)),
         };
+      };
+
+      if (targetClip && vTrack && vTrack.clips.length > 1) {
+        if (!targetClip.layoutOverride) {
+          targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+        }
+        const clipRegion = targetClip.layoutOverride?.regions.find((r) => r.id === regionId);
+        if (clipRegion) applyReset(clipRegion);
       }
+
+      const region = draft.layout.regions.find((r) => r.id === regionId);
+      if (region) applyReset(region);
+
       return draft;
     }, true);
   },

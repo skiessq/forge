@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { Project, ExportSettings, LayoutRegion } from '../types';
+import { formatHookLines } from '../utils/hookText';
 
 export interface FFmpegCommandPlan {
   command: string;
@@ -61,41 +62,9 @@ export function buildFFmpegExportCommand(
   const allTracks = project.tracks || (project as any).timeline?.tracks || [];
   const videoTrack = allTracks.find((t) => t.type === 'video');
   const clips = videoTrack?.clips || [];
-  let baseVideoInputNode = '[0:v]';
-
-  // If clips are trimmed or split into multiple segments
-  if (clips.length === 1 && (clips[0].sourceStart > 0 || clips[0].duration < (project.source.probe?.duration || 10) - 0.1)) {
-    const c = clips[0];
-    filterChains.push(
-      `[0:v]trim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},setpts=PTS-STARTPTS[v_trimmed]`
-    );
-    baseVideoInputNode = '[v_trimmed]';
-  } else if (clips.length > 1) {
-    const segStreams: string[] = [];
-    clips.forEach((c, idx) => {
-      const segStream = `[seg_v_${idx}]`;
-      filterChains.push(
-        `[0:v]trim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},setpts=PTS-STARTPTS${segStream}`
-      );
-      segStreams.push(segStream);
-    });
-    filterChains.push(
-      `${segStreams.join('')}concat=n=${clips.length}:v=1:a=0[v_concatenated]`
-    );
-    baseVideoInputNode = '[v_concatenated]';
-  }
-
   // Source video dimensions
   const srcW = project.source.probe?.width || 1920;
   const srcH = project.source.probe?.height || 1080;
-
-  // Split input into 2 streams so multi-region layouts can each consume one
-  filterChains.push(`${baseVideoInputNode}split=2[v_in_1][v_in_2]`);
-
-  const tpl = project.layout.templateId;
-  const splitRatio = project.layout.splitRatio || 0.5;
-
-  let finalVideoStream = '[v_out]';
 
   function buildCropScaleFilter(
     inputStream: string,
@@ -124,122 +93,160 @@ export function buildFFmpegExportCommand(
     return `${inputStream}crop=${cropW}:${cropH}:${cropX}:${cropY},scale=${targetW}:${targetH},setsar=1${outputStream}`;
   }
 
-  switch (tpl) {
-    case 'gameplay_full': {
-      const reg = project.layout.regions[0] || {
-        crop: { x: 0.2, y: 0, width: 0.6, height: 1 },
-      };
-      filterChains.push(
-        buildCropScaleFilter('[v_in_1]', reg, canvasWidth, canvasHeight, finalVideoStream)
-      );
-      break;
-    }
+  function buildLayoutChains(
+    baseInput: string,
+    layout: typeof project.layout,
+    outputNode: string,
+    suffix: string
+  ): string[] {
+    const chains: string[] = [];
+    const tpl = layout.templateId;
+    const splitRatio = layout.splitRatio || 0.5;
 
-    case 'split_facecam_top':
-    case 'split_gameplay_top': {
-      const regTop = project.layout.regions[0];
-      const regBottom = project.layout.regions[1];
+    // Split input into 2 streams for multi-region layout
+    chains.push(`${baseInput}split=2[v_split_1_${suffix}][v_split_2_${suffix}]`);
 
-      const topH = makeEven(canvasHeight * splitRatio);
-      const bottomH = makeEven(canvasHeight - topH);
+    switch (tpl) {
+      case 'gameplay_full': {
+        const reg = layout.regions[0] || {
+          crop: { x: 0.2, y: 0, width: 0.6, height: 1 },
+        };
+        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, reg, canvasWidth, canvasHeight, outputNode));
+        break;
+      }
 
-      // Crop top
-      filterChains.push(buildCropScaleFilter('[v_in_1]', regTop, canvasWidth, topH, '[v_top]'));
+      case 'split_facecam_top':
+      case 'split_gameplay_top': {
+        const regTop = layout.regions[0];
+        const regBottom = layout.regions[1];
+        const topH = makeEven(canvasHeight * splitRatio);
+        const bottomH = makeEven(canvasHeight - topH);
 
-      // Crop bottom
-      filterChains.push(buildCropScaleFilter('[v_in_2]', regBottom, canvasWidth, bottomH, '[v_bot]'));
+        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, regTop, canvasWidth, topH, `[v_top_${suffix}]`));
+        chains.push(buildCropScaleFilter(`[v_split_2_${suffix}]`, regBottom, canvasWidth, bottomH, `[v_bot_${suffix}]`));
 
-      // Stack top and bottom
-      if (project.layout.dividerWidth > 0) {
-        const divH = project.layout.dividerWidth;
-        const color = project.layout.dividerColor.replace('#', '0x');
-        filterChains.push(
-          `[v_top][v_bot]vstack=inputs=2[v_stacked]`,
-          `[v_stacked]drawbox=x=0:y=${topH - Math.round(divH / 2)}:w=${canvasWidth}:h=${divH}:color=${color}@1:t=fill${finalVideoStream}`
+        if (layout.dividerWidth > 0) {
+          const divH = layout.dividerWidth;
+          const color = layout.dividerColor.replace('#', '0x');
+          chains.push(
+            `[v_top_${suffix}][v_bot_${suffix}]vstack=inputs=2[v_stacked_${suffix}]`,
+            `[v_stacked_${suffix}]drawbox=x=0:y=${topH - Math.round(divH / 2)}:w=${canvasWidth}:h=${divH}:color=${color}@1:t=fill${outputNode}`
+          );
+        } else {
+          chains.push(`[v_top_${suffix}][v_bot_${suffix}]vstack=inputs=2${outputNode}`);
+        }
+        break;
+      }
+
+      case 'media_top_game_bottom':
+      case 'media_bottom_game_top': {
+        const isMediaTop = tpl === 'media_top_game_bottom';
+        const topH = makeEven(canvasHeight * splitRatio);
+        const bottomH = makeEven(canvasHeight - topH);
+        const mediaH = isMediaTop ? topH : bottomH;
+        const gameH = isMediaTop ? bottomH : topH;
+        const gameReg = isMediaTop ? layout.regions[1] : layout.regions[0];
+
+        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, gameReg, canvasWidth, gameH, `[v_game_${suffix}]`));
+
+        if (secondaryInputIndex >= 0) {
+          chains.push(
+            `[${secondaryInputIndex}:v]scale=${canvasWidth}:${mediaH}:force_original_aspect_ratio=decrease,pad=${canvasWidth}:${mediaH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v_media_${suffix}]`
+          );
+        } else {
+          chains.push(`color=c=0x1E293B:s=${canvasWidth}x${mediaH}:duration=10[v_media_${suffix}]`);
+        }
+
+        const topStream = isMediaTop ? `[v_media_${suffix}]` : `[v_game_${suffix}]`;
+        const botStream = isMediaTop ? `[v_game_${suffix}]` : `[v_media_${suffix}]`;
+
+        if (layout.dividerWidth > 0) {
+          const divH = layout.dividerWidth;
+          const color = layout.dividerColor.replace('#', '0x');
+          chains.push(
+            `${topStream}${botStream}vstack=inputs=2[v_stacked_${suffix}]`,
+            `[v_stacked_${suffix}]drawbox=x=0:y=${topH - Math.round(divH / 2)}:w=${canvasWidth}:h=${divH}:color=${color}@1:t=fill${outputNode}`
+          );
+        } else {
+          chains.push(`${topStream}${botStream}vstack=inputs=2${outputNode}`);
+        }
+        break;
+      }
+
+      case 'blurred_background_fit': {
+        chains.push(
+          `[v_split_1_${suffix}]scale=${canvasWidth}:${canvasHeight}:force_original_aspect_ratio=increase,crop=${canvasWidth}:${canvasHeight},boxblur=25:5[v_blur_bg_${suffix}]`
         );
-      } else {
-        filterChains.push(`[v_top][v_bot]vstack=inputs=2${finalVideoStream}`);
-      }
-      break;
-    }
-
-    case 'media_top_game_bottom':
-    case 'media_bottom_game_top': {
-      const isMediaTop = tpl === 'media_top_game_bottom';
-      const topH = makeEven(canvasHeight * splitRatio);
-      const bottomH = makeEven(canvasHeight - topH);
-
-      const mediaH = isMediaTop ? topH : bottomH;
-      const gameH = isMediaTop ? bottomH : topH;
-
-      const gameReg = isMediaTop ? project.layout.regions[1] : project.layout.regions[0];
-      filterChains.push(buildCropScaleFilter('[v_in_1]', gameReg, canvasWidth, gameH, '[v_game]'));
-
-      if (secondaryInputIndex >= 0) {
-        filterChains.push(
-          `[${secondaryInputIndex}:v]scale=${canvasWidth}:${mediaH}:force_original_aspect_ratio=decrease,pad=${canvasWidth}:${mediaH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v_media]`
+        const targetW = makeEven(canvasWidth * 0.96);
+        chains.push(
+          `[v_split_2_${suffix}]scale=${targetW}:-2,setsar=1[v_crisp_fg_${suffix}]`,
+          `[v_blur_bg_${suffix}][v_crisp_fg_${suffix}]overlay=(W-w)/2:(H-h)/2${outputNode}`
         );
-      } else {
-        filterChains.push(`color=c=0x1E293B:s=${canvasWidth}x${mediaH}:duration=10[v_media]`);
+        break;
       }
 
-      const topStream = isMediaTop ? '[v_media]' : '[v_game]';
-      const botStream = isMediaTop ? '[v_game]' : '[v_media]';
+      case 'picture_in_picture': {
+        const mainReg = layout.regions[0];
+        const pipReg = layout.regions[1];
+        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, mainReg, canvasWidth, canvasHeight, `[v_base_${suffix}]`));
 
-      if (project.layout.dividerWidth > 0) {
-        const divH = project.layout.dividerWidth;
-        const color = project.layout.dividerColor.replace('#', '0x');
-        filterChains.push(
-          `${topStream}${botStream}vstack=inputs=2[v_stacked]`,
-          `[v_stacked]drawbox=x=0:y=${topH - Math.round(divH / 2)}:w=${canvasWidth}:h=${divH}:color=${color}@1:t=fill${finalVideoStream}`
-        );
-      } else {
-        filterChains.push(`${topStream}${botStream}vstack=inputs=2${finalVideoStream}`);
+        const pipBounds = pipReg.targetBounds;
+        const pipW = makeEven(canvasWidth * pipBounds.width);
+        const pipH = makeEven(canvasHeight * pipBounds.height);
+        const pipX = Math.round(canvasWidth * pipBounds.x);
+        const pipY = Math.round(canvasHeight * pipBounds.y);
+
+        chains.push(buildCropScaleFilter(`[v_split_2_${suffix}]`, pipReg, pipW, pipH, `[v_pip_raw_${suffix}]`));
+        let pipChain = `[v_pip_raw_${suffix}]`;
+        if (pipReg.borderWidth && pipReg.borderWidth > 0) {
+          pipChain += `drawbox=x=0:y=0:w=${pipW}:h=${pipH}:color=white@1:t=${pipReg.borderWidth},`;
+        }
+        pipChain += `setsar=1[v_pip_${suffix}]`;
+        chains.push(pipChain);
+        chains.push(`[v_base_${suffix}][v_pip_${suffix}]overlay=${pipX}:${pipY}${outputNode}`);
+        break;
       }
-      break;
+
+      default: {
+        const reg = layout.regions[0] || { crop: { x: 0, y: 0, width: 1, height: 1 } };
+        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, reg, canvasWidth, canvasHeight, outputNode));
+        break;
+      }
     }
 
-    case 'blurred_background_fit': {
-      // 1. Zoomed, cropped, heavily blurred background filling 1080x1920
+    return chains;
+  }
+
+  // Handle video tracks and clips (with per-clip layout overrides)
+  let finalVideoStream = '[v_out]';
+
+  if (clips.length > 1) {
+    const renderedClips: string[] = [];
+    clips.forEach((c, idx) => {
+      const rawClip = `[raw_clip_${idx}]`;
+      const renderedClip = `[rendered_clip_${idx}]`;
       filterChains.push(
-        `[v_in_1]scale=${canvasWidth}:${canvasHeight}:force_original_aspect_ratio=increase,crop=${canvasWidth}:${canvasHeight},boxblur=25:5[v_blur_bg]`
+        `[0:v]trim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},setpts=PTS-STARTPTS${rawClip}`
       );
+      const clipLayout = c.layoutOverride || project.layout;
+      const chains = buildLayoutChains(rawClip, clipLayout, renderedClip, `seg_${idx}`);
+      filterChains.push(...chains);
+      renderedClips.push(renderedClip);
+    });
 
-      // 2. Crisp centered video scaled to fit with padding or margin
-      const targetW = makeEven(canvasWidth * 0.96);
+    filterChains.push(`${renderedClips.join('')}concat=n=${clips.length}:v=1:a=0[v_out]`);
+  } else {
+    // Single clip
+    let baseClipInput = '[0:v]';
+    if (clips.length === 1 && (clips[0].sourceStart > 0 || clips[0].duration < (project.source.probe?.duration || 10) - 0.1)) {
       filterChains.push(
-        `[v_in_2]scale=${targetW}:-2,setsar=1[v_crisp_fg]`,
-        `[v_blur_bg][v_crisp_fg]overlay=(W-w)/2:(H-h)/2${finalVideoStream}`
+        `[0:v]trim=start=${clips[0].sourceStart.toFixed(2)}:duration=${clips[0].duration.toFixed(2)},setpts=PTS-STARTPTS[v_trimmed]`
       );
-      break;
+      baseClipInput = '[v_trimmed]';
     }
-
-    case 'picture_in_picture': {
-      // Main gameplay fills canvas
-      const mainReg = project.layout.regions[0];
-      const pipReg = project.layout.regions[1];
-
-      filterChains.push(buildCropScaleFilter('[v_in_1]', mainReg, canvasWidth, canvasHeight, '[v_base]'));
-
-      // PiP Overlay Facecam
-      const pipBounds = pipReg.targetBounds;
-      const pipW = makeEven(canvasWidth * pipBounds.width);
-      const pipH = makeEven(canvasHeight * pipBounds.height);
-      const pipX = Math.round(canvasWidth * pipBounds.x);
-      const pipY = Math.round(canvasHeight * pipBounds.y);
-
-      filterChains.push(buildCropScaleFilter('[v_in_2]', pipReg, pipW, pipH, '[v_pip_raw]'));
-
-      let pipChain = `[v_pip_raw]`;
-      if (pipReg.borderWidth && pipReg.borderWidth > 0) {
-        pipChain += `drawbox=x=0:y=0:w=${pipW}:h=${pipH}:color=white@1:t=${pipReg.borderWidth},`;
-      }
-      pipChain += `setsar=1[v_pip]`;
-      filterChains.push(pipChain);
-
-      filterChains.push(`[v_base][v_pip]overlay=${pipX}:${pipY}${finalVideoStream}`);
-      break;
-    }
+    const clipLayout = clips[0]?.layoutOverride || project.layout;
+    const chains = buildLayoutChains(baseClipInput, clipLayout, '[v_out]', 'main');
+    filterChains.push(...chains);
   }
 
   // Encoder selection with HW Accel support
@@ -260,35 +267,6 @@ export function buildFFmpegExportCommand(
     videoEncoder = 'libx264';
     const preset = settings.quality === 'fast' ? 'veryfast' : settings.quality === 'balanced' ? 'fast' : 'medium';
     encoderArgs.push('-preset', preset, '-crf', '19');
-  }
-
-  // Intro hook text overlay (first 1-5 seconds)
-  if (project.introHook?.enabled && project.introHook.text) {
-    const rawText = project.introHook.text.replace(/'/g, '').replace(/:/g, '').replace(/\*/g, '').trim();
-    const hookDur = project.introHook.duration || 2.5;
-    const hookColor = (project.introHook.color || '#FFE600').replace('#', '0x');
-    const hookFontSize = Math.round((project.introHook.fontSize || 56) * 1.0);
-    const posXNorm = project.introHook.positionX ?? 0.5;
-    const posYNorm = project.introHook.positionY ?? 0.22;
-    const hookPad = project.introHook.backgroundPadding ?? 16;
-    const hookBorderW = project.introHook.outlineWidth ?? 2;
-    const hookBorderColor = (project.introHook.outlineColor || '#000000').replace('#', '0x');
-
-    const hookX = Math.abs(posXNorm - 0.5) < 0.02 ? '(w-text_w)/2' : `(w*${posXNorm})-(text_w/2)`;
-    let hookY = `(h*${posYNorm})-(text_h/2)`;
-
-    if (project.introHook.transition === 'slide_down') {
-      hookY = `if(lt(t,0.4),(h*${posYNorm})-(text_h/2)-100*(1-t/0.4),(h*${posYNorm})-(text_h/2))`;
-    } else if (project.introHook.transition === 'bounce_drop') {
-      hookY = `if(lt(t,0.5),(h*${posYNorm})-(text_h/2)-160*(1-t/0.5)*(1-t/0.5),(h*${posYNorm})-(text_h/2))`;
-    }
-
-    const alphaExpr = `if(lt(t,0.25),t/0.25,if(gt(t,${hookDur}-0.25),(${hookDur}-t)/0.25,1))`;
-
-    filterChains.push(
-      `${finalVideoStream}drawtext=text='${rawText}':fontsize=${hookFontSize}:fontcolor=${hookColor}:borderw=${hookBorderW}:bordercolor=${hookBorderColor}:box=1:boxcolor=black@0.75:boxborderw=${hookPad}:x=${hookX}:y=${hookY}:alpha='${alphaExpr}':enable='between(t,0,${hookDur})'[v_hook]`
-    );
-    finalVideoStream = '[v_hook]';
   }
 
   // Watermark overlay
@@ -312,17 +290,93 @@ export function buildFFmpegExportCommand(
     finalVideoStream = '[v_wm]';
   }
 
-  // Subtitle burning with libass
-  if (project.subtitles && project.subtitles.length > 0) {
+  // Intro Hook rendering with full-color textured emojis, Montserrat Black & outline
+  const hasSubtitles = Boolean(project.subtitles && project.subtitles.length > 0);
+  const hasIntroHook = Boolean(project.introHook?.enabled && project.introHook.text);
+  let hookOverlaid = false;
+
+  if (hasIntroHook) {
+    const scriptPath = path.resolve(process.cwd(), 'scripts', 'render_hook_overlay.ps1');
+    const projectJsonPath = path.join(projectDir, 'project.json');
+    const hookOverlayPath = path.join(projectDir, 'hook_overlay.png');
+    try {
+      fs.writeFileSync(projectJsonPath, JSON.stringify(project, null, 2), 'utf-8');
+      require('child_process').execSync(
+        `powershell.exe -ExecutionPolicy Bypass -File "${scriptPath}" -projectJsonPath "${projectJsonPath}" -outputPath "${hookOverlayPath}"`,
+        { windowsHide: true, stdio: 'pipe' }
+      );
+    } catch (err) {
+      console.error('Error generating hook overlay:', err);
+    }
+
+    if (fs.existsSync(hookOverlayPath)) {
+      hookOverlaid = true;
+      const hookInputIndex = inputs.length / 2;
+      inputs.push('-loop', '1', '-i', hookOverlayPath);
+
+      // Read PNG dimensions
+      let hookHeight = 202;
+      try {
+        const fd = fs.openSync(hookOverlayPath, 'r');
+        const buf = Buffer.alloc(24);
+        fs.readSync(fd, buf, 0, 24, 0);
+        fs.closeSync(fd);
+        hookHeight = buf.readUInt32BE(20);
+      } catch {}
+
+      const totalDuration = clips.length > 0
+        ? clips.reduce((acc: number, c: any) => acc + c.duration, 0)
+        : (project.source.probe?.duration || 30);
+      const hookDur = project.introHook.stayWholeVideo
+        ? totalDuration
+        : Math.min(totalDuration, project.introHook.duration || 2.5);
+
+      const targetY = Math.max(20, Math.round(canvasHeight * (project.introHook.positionY ?? 0.22) - hookHeight / 2));
+      const tr = project.introHook.transition || 'bounce_drop';
+
+      let yExpr = `${targetY}`;
+      if (tr === 'bounce_drop') {
+        const startY = targetY - 140;
+        yExpr = `if(lte(t,0.4),${startY}+140*(t/0.4),${targetY})`;
+      } else if (tr === 'slide_down') {
+        const startY = targetY - 120;
+        yExpr = `if(lte(t,0.35),${startY}+120*(t/0.35),${targetY})`;
+      }
+
+      const fadeInDur = 0.15;
+      const fadeOutDur = 0.35;
+      let fadeFilter = `fade=t=in:st=0:d=${fadeInDur}:alpha=1`;
+      if (!project.introHook.stayWholeVideo && hookDur > fadeInDur + fadeOutDur) {
+        const fadeOutSt = Math.max(0, hookDur - fadeOutDur).toFixed(2);
+        fadeFilter += `,fade=t=out:st=${fadeOutSt}:d=${fadeOutDur}:alpha=1`;
+      }
+
+      filterChains.push(
+        `[${hookInputIndex}:v]format=rgba,${fadeFilter}[v_hook_alpha]`
+      );
+      filterChains.push(
+        `${finalVideoStream}[v_hook_alpha]overlay=x=0:y='${yExpr}':shortest=1:enable='between(t,0,${hookDur.toFixed(2)})'[v_hooked]`
+      );
+      finalVideoStream = '[v_hooked]';
+    }
+  }
+
+  // Subtitle burning with libass (pixel-perfect viral fonts, word highlights, 2.25x preview size, NO white halo)
+  if (hasSubtitles || (!hookOverlaid && hasIntroHook)) {
     const { generateAssSubtitles } = require('../subtitles/assGenerator');
-    const assContent = generateAssSubtitles(project);
+    const assContent = generateAssSubtitles(project, { includeIntroHook: !hookOverlaid });
     const assPath = path.join(projectDir, 'subtitles.ass');
     fs.writeFileSync(assPath, assContent, 'utf-8');
 
     // Escape Windows file path for FFmpeg subtitles filter: C\:/path/to/file.ass
     const escapedAssPath = assPath.replace(/\\/g, '/').replace(':', '\\:');
+    const fontsDir = path.join(process.cwd(), 'assets', 'fonts');
+    const fontsdirOpt = fs.existsSync(fontsDir)
+      ? `:fontsdir='${fontsDir.replace(/\\/g, '/').replace(':', '\\:')}'`
+      : '';
+
     filterChains.push(
-      `${finalVideoStream}subtitles='${escapedAssPath}'[v_subbed]`
+      `${finalVideoStream}subtitles='${escapedAssPath}'${fontsdirOpt}[v_subbed]`
     );
     finalVideoStream = '[v_subbed]';
   }
@@ -351,11 +405,36 @@ export function buildFFmpegExportCommand(
     inputs.push('-stream_loop', '-1', '-i', audioSettings.backgroundMusicPath);
   }
 
-  if (hasBgMusic || hasLoudnorm || hasDucking) {
+  const isTrimmed = clips.length === 1 && (clips[0].sourceStart > 0 || clips[0].duration < (project.source.probe?.duration || 10) - 0.1);
+  const isMultiClip = clips.length > 1;
+
+  if (hasBgMusic || hasLoudnorm || hasDucking || isTrimmed || isMultiClip) {
     audioCodec = 'aac';
     audioCodecArgs = ['-b:a', '192k'];
 
     let currentAudioNode = `[0:a:${audioTrackIdx}]`;
+
+    // Audio trimming & concatenation in lockstep with video tracks
+    if (isTrimmed) {
+      const c = clips[0];
+      filterChains.push(
+        `[0:a:${audioTrackIdx}]atrim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},asetpts=PTS-STARTPTS[a_trimmed]`
+      );
+      currentAudioNode = `[a_trimmed]`;
+    } else if (isMultiClip) {
+      const segStreams: string[] = [];
+      clips.forEach((c, idx) => {
+        const segStream = `[seg_a_${idx}]`;
+        filterChains.push(
+          `[0:a:${audioTrackIdx}]atrim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},asetpts=PTS-STARTPTS${segStream}`
+        );
+        segStreams.push(segStream);
+      });
+      filterChains.push(
+        `${segStreams.join('')}concat=n=${clips.length}:v=0:a=1[a_concatenated]`
+      );
+      currentAudioNode = `[a_concatenated]`;
+    }
 
     if (hasLoudnorm) {
       filterChains.push(`${currentAudioNode}loudnorm=I=-16:TP=-1.5:LRA=11[a_norm]`);
@@ -381,14 +460,19 @@ export function buildFFmpegExportCommand(
     '-map', finalVideoStream,
   ];
 
-  if (hasBgMusic || hasLoudnorm || hasDucking) {
+  if (hasBgMusic || hasLoudnorm || hasDucking || isTrimmed || isMultiClip) {
     args.push('-map', finalAudioStream, '-c:a', audioCodec, ...audioCodecArgs);
   } else {
     // Default rule: Keep original audio untouched (bitstream copy when possible)
     args.push('-map', audioInputMap, '-c:a', 'copy');
   }
 
+  const outputDuration = clips.length > 0
+    ? clips.reduce((acc, c) => acc + c.duration, 0)
+    : (project.source.probe?.duration || 10);
+
   args.push(
+    '-t', outputDuration.toFixed(2),
     '-c:v', videoEncoder,
     ...encoderArgs,
     '-r', String(fps),

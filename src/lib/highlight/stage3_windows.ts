@@ -214,7 +214,18 @@ export function buildAndFilterWindows(
           sceneChangeCount: sig.sceneChangeCount,
         });
 
-        // Jump ahead in j if we found a nice complete thought
+        // Check if current sentence ends on a hanging question (e.g. caster asking a question)
+        const isQuestion = /\?$/.test(currentSentence.text.trim());
+        if (isQuestion && j + 1 < sentences.length) {
+          const nextSentence = sentences[j + 1];
+          const gap = nextSentence.start - currentSentence.end;
+          // If a reply starts within 2.5s and fits within extended length, keep going to capture the reply!
+          if (gap <= 2.5 && (nextSentence.end - winStart) <= maxLength + 8) {
+            continue;
+          }
+        }
+
+        // Jump ahead in j if we found a nice complete thought and reached target length
         if (duration >= minLength + 10) {
           break;
         }

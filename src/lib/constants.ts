@@ -29,6 +29,22 @@ export const BUILT_IN_FONTS = [
 ];
 
 export const SUBTITLE_PRESETS: Record<string, SubtitleStyle> = {
+  viral_clean: {
+    fontFamily: 'Montserrat',
+    fontSize: 54,
+    primaryColor: '#FFFFFF',
+    highlightColor: '#FFE600',
+    outlineColor: '#000000',
+    outlineWidth: 5,
+    shadowColor: 'rgba(0,0,0,0.9)',
+    shadowDistance: 3,
+    textTransform: 'none',
+    position: 'bottom',
+    verticalOffset: -120,
+    maxWordsPerLine: 4,
+    lineSpacing: 1.2,
+    animation: 'karaoke_highlight',
+  },
   mrbeast_viral: {
     fontFamily: 'Montserrat',
     fontSize: 56,
@@ -38,7 +54,7 @@ export const SUBTITLE_PRESETS: Record<string, SubtitleStyle> = {
     outlineWidth: 5,
     shadowColor: 'rgba(0,0,0,0.9)',
     shadowDistance: 3,
-    textTransform: 'uppercase',
+    textTransform: 'none',
     position: 'bottom',
     verticalOffset: -120,
     maxWordsPerLine: 3,
@@ -70,7 +86,7 @@ export const SUBTITLE_PRESETS: Record<string, SubtitleStyle> = {
     outlineWidth: 4,
     shadowColor: 'rgba(0,0,0,0.8)',
     shadowDistance: 2,
-    textTransform: 'uppercase',
+    textTransform: 'none',
     position: 'bottom',
     verticalOffset: -120,
     maxWordsPerLine: 4,
@@ -162,7 +178,7 @@ export const SUBTITLE_PRESETS: Record<string, SubtitleStyle> = {
   },
 };
 
-export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = SUBTITLE_PRESETS.bold_white;
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = SUBTITLE_PRESETS.viral_clean;
 
 export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5): LayoutConfig {
   switch (templateId) {

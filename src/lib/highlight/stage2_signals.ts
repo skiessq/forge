@@ -178,14 +178,16 @@ export async function extractSignals(
   }
 
   const cacheDir = getSourceCacheDir(sourceHash);
-  const tempWav = path.join(cacheDir, 'signals_audio.wav');
+  // Reuse audio_master.wav from Stage 1 if available to avoid redundant FFmpeg extraction
+  const masterWav = path.join(cacheDir, 'audio_master.wav');
+  const tempWav = fs.existsSync(masterWav) ? masterWav : path.join(cacheDir, 'signals_audio.wav');
   const ffmpegExe = findExecutable('ffmpeg');
   if (!ffmpegExe) {
     throw new Error('FFmpeg executable not found.');
   }
 
-  onProgress?.(15, 'Extracting audio for signal timeline...');
   if (!fs.existsSync(tempWav)) {
+    onProgress?.(15, 'Extracting audio for signal timeline...');
     await extractMasterAudio(ffmpegExe, sourcePath, tempWav);
   }
 

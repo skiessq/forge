@@ -51,7 +51,12 @@ export function runFFmpegExport(
       const child = spawn(ffmpegExe, plan.args, { windowsHide: true });
       jobQueue.registerProcess(jobId, child);
 
-      const totalDuration = project.source.probe?.duration || 10;
+      const allTracks = project.tracks || (project as any).timeline?.tracks || [];
+      const videoTrack = allTracks.find((t: any) => t.type === 'video');
+      const clips = videoTrack?.clips || [];
+      const totalDuration = clips.length > 0
+        ? clips.reduce((acc: number, c: any) => acc + c.duration, 0)
+        : (project.source.probe?.duration || 10);
       let lastErrText = '';
 
       child.stderr.on('data', (chunk: Buffer) => {

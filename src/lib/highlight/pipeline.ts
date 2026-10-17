@@ -54,7 +54,7 @@ export async function runAutoHighlightPipeline(
     sourcePath,
     sourceDuration,
     language: 'auto',
-    modelSize: config.whisperModel || 'base',
+    modelSize: config.whisperModel || 'large-v3-turbo',
     chunkDurationSec: config.chunkDurationSec || 600,
     chunkOverlapSec: config.chunkOverlapSec || 5,
     sourceHash,
