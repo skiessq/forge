@@ -45,6 +45,8 @@ interface EditorState {
   setLayoutTemplate: (templateId: LayoutTemplateId) => void;
   setSplitRatio: (ratio: number) => void;
   updateRegionCrop: (regionId: string, crop: Partial<CropRect>) => void;
+  zoomRegion: (regionId: string, zoomFactor: number) => void;
+  resetRegionCrop: (regionId: string) => void;
 
   saveToServer: () => Promise<void>;
 }
@@ -178,14 +180,51 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const region = draft.layout.regions.find((r) => r.id === regionId);
       if (region) {
         region.crop = {
-          x: Math.max(0, Math.min(1, cropUpdate.x ?? region.crop.x)),
-          y: Math.max(0, Math.min(1, cropUpdate.y ?? region.crop.y)),
-          width: Math.max(0.05, Math.min(1, cropUpdate.width ?? region.crop.width)),
-          height: Math.max(0.05, Math.min(1, cropUpdate.height ?? region.crop.height)),
+          x: cropUpdate.x !== undefined ? Math.max(-2, Math.min(2, cropUpdate.x)) : region.crop.x,
+          y: cropUpdate.y !== undefined ? Math.max(-2, Math.min(2, cropUpdate.y)) : region.crop.y,
+          width: cropUpdate.width !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.width)) : region.crop.width,
+          height: cropUpdate.height !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.height)) : region.crop.height,
         };
       }
       return draft;
     }, false); // don't flood undo history on continuous dragging
+  },
+
+  zoomRegion: (regionId, zoomFactor) => {
+    get().updateProject((draft) => {
+      const region = draft.layout.regions.find((r) => r.id === regionId);
+      if (region) {
+        const currentW = region.crop.width;
+        const currentH = region.crop.height;
+        const newW = Math.max(0.05, Math.min(2.5, currentW / zoomFactor));
+        const newH = Math.max(0.05, Math.min(2.5, currentH / zoomFactor));
+        // Keep center anchored
+        const centerX = region.crop.x + currentW / 2;
+        const centerY = region.crop.y + currentH / 2;
+        region.crop = {
+          x: centerX - newW / 2,
+          y: centerY - newH / 2,
+          width: newW,
+          height: newH,
+        };
+      }
+      return draft;
+    }, false);
+  },
+
+  resetRegionCrop: (regionId) => {
+    get().updateProject((draft) => {
+      const region = draft.layout.regions.find((r) => r.id === regionId);
+      if (region) {
+        region.crop = {
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        };
+      }
+      return draft;
+    }, true);
   },
 
   saveToServer: async () => {

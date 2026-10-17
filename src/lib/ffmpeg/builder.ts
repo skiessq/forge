@@ -96,18 +96,38 @@ export function buildFFmpegExportCommand(
 
   let finalVideoStream = '[v_out]';
 
+  function buildCropScaleFilter(
+    inputStream: string,
+    reg: { crop: { x: number; y: number; width: number; height: number } },
+    targetW: number,
+    targetH: number,
+    outputStream: string
+  ): string {
+    const cropW = makeEven(srcW * reg.crop.width);
+    const cropH = makeEven(srcH * reg.crop.height);
+    const cropX = Math.round(srcW * reg.crop.x);
+    const cropY = Math.round(srcH * reg.crop.y);
+
+    const needsPadding = cropX < 0 || cropY < 0 || cropX + cropW > srcW || cropY + cropH > srcH;
+
+    if (needsPadding) {
+      const padW = srcW * 3;
+      const padH = srcH * 3;
+      const paddedX = cropX + srcW;
+      const paddedY = cropY + srcH;
+      return `${inputStream}pad=${padW}:${padH}:${srcW}:${srcH}:color=black,crop=${cropW}:${cropH}:${paddedX}:${paddedY},scale=${targetW}:${targetH},setsar=1${outputStream}`;
+    }
+
+    return `${inputStream}crop=${cropW}:${cropH}:${cropX}:${cropY},scale=${targetW}:${targetH},setsar=1${outputStream}`;
+  }
+
   switch (tpl) {
     case 'gameplay_full': {
       const reg = project.layout.regions[0] || {
         crop: { x: 0.2, y: 0, width: 0.6, height: 1 },
       };
-      const cropW = makeEven(srcW * reg.crop.width);
-      const cropH = makeEven(srcH * reg.crop.height);
-      const cropX = Math.round(srcW * reg.crop.x);
-      const cropY = Math.round(srcH * reg.crop.y);
-
       filterChains.push(
-        `[v_in_1]crop=${cropW}:${cropH}:${cropX}:${cropY},scale=${canvasWidth}:${canvasHeight},setsar=1${finalVideoStream}`
+        buildCropScaleFilter('[v_in_1]', reg, canvasWidth, canvasHeight, finalVideoStream)
       );
       break;
     }
@@ -121,22 +141,10 @@ export function buildFFmpegExportCommand(
       const bottomH = makeEven(canvasHeight - topH);
 
       // Crop top
-      const topCropW = makeEven(srcW * regTop.crop.width);
-      const topCropH = makeEven(srcH * regTop.crop.height);
-      const topCropX = Math.round(srcW * regTop.crop.x);
-      const topCropY = Math.round(srcH * regTop.crop.y);
-      filterChains.push(
-        `[v_in_1]crop=${topCropW}:${topCropH}:${topCropX}:${topCropY},scale=${canvasWidth}:${topH},setsar=1[v_top]`
-      );
+      filterChains.push(buildCropScaleFilter('[v_in_1]', regTop, canvasWidth, topH, '[v_top]'));
 
       // Crop bottom
-      const botCropW = makeEven(srcW * regBottom.crop.width);
-      const botCropH = makeEven(srcH * regBottom.crop.height);
-      const botCropX = Math.round(srcW * regBottom.crop.x);
-      const botCropY = Math.round(srcH * regBottom.crop.y);
-      filterChains.push(
-        `[v_in_2]crop=${botCropW}:${botCropH}:${botCropX}:${botCropY},scale=${canvasWidth}:${bottomH},setsar=1[v_bot]`
-      );
+      filterChains.push(buildCropScaleFilter('[v_in_2]', regBottom, canvasWidth, bottomH, '[v_bot]'));
 
       // Stack top and bottom
       if (project.layout.dividerWidth > 0) {
@@ -162,14 +170,7 @@ export function buildFFmpegExportCommand(
       const gameH = isMediaTop ? bottomH : topH;
 
       const gameReg = isMediaTop ? project.layout.regions[1] : project.layout.regions[0];
-      const gCropW = makeEven(srcW * gameReg.crop.width);
-      const gCropH = makeEven(srcH * gameReg.crop.height);
-      const gCropX = Math.round(srcW * gameReg.crop.x);
-      const gCropY = Math.round(srcH * gameReg.crop.y);
-
-      filterChains.push(
-        `[v_in_1]crop=${gCropW}:${gCropH}:${gCropX}:${gCropY},scale=${canvasWidth}:${gameH},setsar=1[v_game]`
-      );
+      filterChains.push(buildCropScaleFilter('[v_in_1]', gameReg, canvasWidth, gameH, '[v_game]'));
 
       if (secondaryInputIndex >= 0) {
         filterChains.push(
@@ -215,14 +216,7 @@ export function buildFFmpegExportCommand(
       const mainReg = project.layout.regions[0];
       const pipReg = project.layout.regions[1];
 
-      const mCropW = makeEven(srcW * mainReg.crop.width);
-      const mCropH = makeEven(srcH * mainReg.crop.height);
-      const mCropX = Math.round(srcW * mainReg.crop.x);
-      const mCropY = Math.round(srcH * mainReg.crop.y);
-
-      filterChains.push(
-        `[v_in_1]crop=${mCropW}:${mCropH}:${mCropX}:${mCropY},scale=${canvasWidth}:${canvasHeight},setsar=1[v_base]`
-      );
+      filterChains.push(buildCropScaleFilter('[v_in_1]', mainReg, canvasWidth, canvasHeight, '[v_base]'));
 
       // PiP Overlay Facecam
       const pipBounds = pipReg.targetBounds;
@@ -231,16 +225,13 @@ export function buildFFmpegExportCommand(
       const pipX = Math.round(canvasWidth * pipBounds.x);
       const pipY = Math.round(canvasHeight * pipBounds.y);
 
-      const pCropW = makeEven(srcW * pipReg.crop.width);
-      const pCropH = makeEven(srcH * pipReg.crop.height);
-      const pCropX = Math.round(srcW * pipReg.crop.x);
-      const pCropY = Math.round(srcH * pipReg.crop.y);
+      filterChains.push(buildCropScaleFilter('[v_in_2]', pipReg, pipW, pipH, '[v_pip_raw]'));
 
-      let pipChain = `[v_in_2]crop=${pCropW}:${pCropH}:${pCropX}:${pCropY},scale=${pipW}:${pipH},setsar=1`;
+      let pipChain = `[v_pip_raw]`;
       if (pipReg.borderWidth && pipReg.borderWidth > 0) {
-        pipChain += `,drawbox=x=0:y=0:w=${pipW}:h=${pipH}:color=white@1:t=${pipReg.borderWidth}`;
+        pipChain += `drawbox=x=0:y=0:w=${pipW}:h=${pipH}:color=white@1:t=${pipReg.borderWidth},`;
       }
-      pipChain += `[v_pip]`;
+      pipChain += `setsar=1[v_pip]`;
       filterChains.push(pipChain);
 
       filterChains.push(`[v_base][v_pip]overlay=${pipX}:${pipY}${finalVideoStream}`);

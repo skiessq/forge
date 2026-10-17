@@ -5,17 +5,17 @@ import os
 def transcribe(audio_path, language=None, model_size="base"):
     try:
         from faster_whisper import WhisperModel
+        import ctranslate2
         
-        # Check CUDA or CPU
+        # Check CUDA (NVIDIA RTX GPU) or CPU
         device = "cpu"
         compute_type = "int8"
         try:
-            import torch
-            if torch.cuda.is_available():
+            if ctranslate2.get_cuda_device_count() > 0:
                 device = "cuda"
                 compute_type = "float16"
-        except:
-            pass
+        except Exception as e:
+            print(f"CUDA check notice: {e}, falling back to CPU", file=sys.stderr)
 
         print(f"Loading faster-whisper model '{model_size}' on {device} ({compute_type})...", file=sys.stderr)
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
