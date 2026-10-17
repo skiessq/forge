@@ -17,6 +17,12 @@ import {
 } from 'lucide-react';
 import SafeZoneGuide from './SafeZoneGuide';
 
+interface SnapGuideInfo {
+  type: 'horizontal' | 'vertical';
+  percent: number;
+  label: string;
+}
+
 type DragState =
   | {
       mode: 'region';
@@ -27,6 +33,17 @@ type DragState =
       cropY: number;
       regionWidthPx: number;
       regionHeightPx: number;
+      effectiveCropH: number;
+      startAtTop: boolean;
+      startAtBottom: boolean;
+      startAtLeft: boolean;
+      startAtRight: boolean;
+      startAtCenterX: boolean;
+      startAtCenterY: boolean;
+      unlockedTop: boolean;
+      unlockedBottom: boolean;
+      unlockedLeft: boolean;
+      unlockedRight: boolean;
     }
   | {
       mode: 'subtitle';
@@ -34,6 +51,8 @@ type DragState =
       mouseY: number;
       initH: number;
       initV: number;
+      startAtCenterH: boolean;
+      unlockedCenterH: boolean;
     }
   | {
       mode: 'hook';
@@ -43,6 +62,8 @@ type DragState =
       initNormY: number;
       containerWidth: number;
       containerHeight: number;
+      startAtCenterH: boolean;
+      unlockedCenterH: boolean;
     };
 
 export default function PreviewPlayer() {
@@ -60,6 +81,8 @@ export default function PreviewPlayer() {
     safeZoneVisible,
     isTimelineVisible,
     toggleTimeline,
+    snappingEnabled,
+    toggleSnapping,
     updateRegionCrop,
     zoomRegion,
     updateSubtitleStyle,
@@ -74,6 +97,7 @@ export default function PreviewPlayer() {
   const [isMuted, setIsMuted] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<'region' | 'subtitle' | 'hook' | null>(null);
+  const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuideInfo[]>([]);
   const dragStartRef = useRef<DragState | null>(null);
 
   if (!project) return null;
@@ -271,7 +295,7 @@ export default function PreviewPlayer() {
     handleSeek(Math.max(0, Math.min(duration, currentTime + delta)));
   };
 
-  // 4. Interactive Canvas Region Dragging
+  // 4. Interactive Canvas Region Dragging with Smart Barrier Snapping
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current;
     if (!container) return;
@@ -296,6 +320,27 @@ export default function PreviewPlayer() {
       setSelectedOverlayType(null);
       setIsDragging(true);
       setDragMode('region');
+
+      const vW = primaryVideoRef.current?.videoWidth || 1920;
+      const vH = primaryVideoRef.current?.videoHeight || 1080;
+      const regionWidthPx = rect.width * clickedRegion.targetBounds.width;
+      const regionHeightPx = rect.height * clickedRegion.targetBounds.height;
+      const targetAspect = regionWidthPx / Math.max(1, regionHeightPx);
+      const effectiveCropH = (clickedRegion.crop.width * (vW / vH)) / targetAspect;
+
+      // Detect if user starts the drag already sitting at or past a barrier:
+      // If they start on the barrier, "if i do it again it then should go past the barrier" takes effect!
+      const isAtTop = Math.abs(clickedRegion.crop.y - 0) < 0.006 || clickedRegion.crop.y < 0;
+      const bottomBarrier = 1 - effectiveCropH;
+      const isAtBottom = Math.abs(clickedRegion.crop.y - bottomBarrier) < 0.006 || clickedRegion.crop.y > bottomBarrier;
+      const isAtLeft = Math.abs(clickedRegion.crop.x - 0) < 0.006 || clickedRegion.crop.x < 0;
+      const rightBarrier = 1 - clickedRegion.crop.width;
+      const isAtRight = Math.abs(clickedRegion.crop.x - rightBarrier) < 0.006 || clickedRegion.crop.x > rightBarrier;
+      const centerBarrierX = (1 - clickedRegion.crop.width) / 2;
+      const isAtCenterX = Math.abs(clickedRegion.crop.x - centerBarrierX) < 0.006;
+      const centerBarrierY = (1 - effectiveCropH) / 2;
+      const isAtCenterY = Math.abs(clickedRegion.crop.y - centerBarrierY) < 0.006;
+
       dragStartRef.current = {
         mode: 'region',
         regionId: clickedRegion.id,
@@ -303,30 +348,45 @@ export default function PreviewPlayer() {
         mouseY: e.clientY,
         cropX: clickedRegion.crop.x,
         cropY: clickedRegion.crop.y,
-        regionWidthPx: rect.width * clickedRegion.targetBounds.width,
-        regionHeightPx: rect.height * clickedRegion.targetBounds.height,
+        regionWidthPx,
+        regionHeightPx,
+        effectiveCropH,
+        startAtTop: isAtTop,
+        startAtBottom: isAtBottom,
+        startAtLeft: isAtLeft,
+        startAtRight: isAtRight,
+        startAtCenterX: isAtCenterX,
+        startAtCenterY: isAtCenterY,
+        unlockedTop: false,
+        unlockedBottom: false,
+        unlockedLeft: false,
+        unlockedRight: false,
       };
     } else {
       setSelectedOverlayType(null);
     }
   };
 
-  // 5. Interactive Subtitle Dragging
+  // 5. Interactive Subtitle Dragging with Center Magnetic Snap
   const handleSubtitleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedOverlayType('subtitle');
     setIsDragging(true);
     setDragMode('subtitle');
+    const initH = project.subtitleStyle.horizontalOffset || 0;
+    const isAtCenterH = Math.abs(initH) <= 3;
     dragStartRef.current = {
       mode: 'subtitle',
       mouseX: e.clientX,
       mouseY: e.clientY,
-      initH: project.subtitleStyle.horizontalOffset || 0,
+      initH,
       initV: project.subtitleStyle.verticalOffset || 0,
+      startAtCenterH: isAtCenterH,
+      unlockedCenterH: false,
     };
   };
 
-  // 6. Interactive Intro Hook Dragging
+  // 6. Interactive Intro Hook Dragging with Center Magnetic Snap
   const handleHookMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedOverlayType('hook');
@@ -334,32 +394,63 @@ export default function PreviewPlayer() {
     setDragMode('hook');
     const container = containerRef.current;
     const rect = container ? container.getBoundingClientRect() : { width: 400, height: 700 };
+    const initNormX = project.introHook?.positionX ?? 0.5;
+    const isAtCenterH = Math.abs(initNormX - 0.5) <= 0.01;
     dragStartRef.current = {
       mode: 'hook',
       mouseX: e.clientX,
       mouseY: e.clientY,
-      initNormX: project.introHook?.positionX ?? 0.5,
+      initNormX,
       initNormY: project.introHook?.positionY ?? 0.22,
       containerWidth: rect.width,
       containerHeight: rect.height,
+      startAtCenterH: isAtCenterH,
+      unlockedCenterH: false,
     };
   };
 
-  // Unified MouseMove handler for region, subtitle, and hook dragging
+  // Unified MouseMove handler with Barrier Snapping and Pass-Through Resistance
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isDragging || !dragStartRef.current) return;
     const drag = dragStartRef.current;
+    const isSnapping = snappingEnabled && !e.shiftKey;
 
     if (drag.mode === 'subtitle') {
       const deltaX = e.clientX - drag.mouseX;
       const deltaY = e.clientY - drag.mouseY;
-      // Invert vertical offset based on position direction
       const vDir = project.subtitleStyle.position === 'top' ? 1 : -1;
-      const newH = Math.max(-150, Math.min(150, drag.initH + deltaX));
-      const newV = Math.max(-150, Math.min(150, drag.initV + deltaY * vDir));
+      let rawH = drag.initH + deltaX;
+      let rawV = drag.initV + deltaY * vDir;
+
+      const guides: SnapGuideInfo[] = [];
+
+      if (isSnapping) {
+        // Horizontal Center Magnet (0px offset)
+        if (drag.startAtCenterH) {
+          if (Math.abs(rawH) > 16) {
+            drag.startAtCenterH = false;
+          }
+        } else if (!drag.unlockedCenterH && Math.abs(rawH) <= 12) {
+          rawH = 0;
+          guides.push({
+            type: 'vertical',
+            percent: 50,
+            label: 'Captions Centered',
+          });
+        } else if (Math.abs(rawH) > 28) {
+          drag.unlockedCenterH = true;
+        }
+
+        // Vertical reset magnet (0px offset)
+        if (Math.abs(rawV) <= 10) {
+          rawV = 0;
+        }
+      }
+
+      setActiveSnapGuides(guides);
       updateSubtitleStyle({
-        horizontalOffset: Math.round(newH),
-        verticalOffset: Math.round(newV),
+        horizontalOffset: Math.max(-150, Math.min(150, Math.round(rawH))),
+        verticalOffset: Math.max(-150, Math.min(150, Math.round(rawV))),
       });
       return;
     }
@@ -369,11 +460,43 @@ export default function PreviewPlayer() {
       const deltaY = e.clientY - drag.mouseY;
       const cW = drag.containerWidth || 400;
       const cH = drag.containerHeight || 700;
-      const newX = Math.max(0.08, Math.min(0.92, drag.initNormX + deltaX / cW));
-      const newY = Math.max(0.06, Math.min(0.94, drag.initNormY + deltaY / cH));
+      let rawX = drag.initNormX + deltaX / cW;
+      let rawY = drag.initNormY + deltaY / cH;
+
+      const guides: SnapGuideInfo[] = [];
+
+      if (isSnapping) {
+        // Horizontal Center Magnet (50%)
+        if (drag.startAtCenterH) {
+          if (Math.abs(rawX - 0.5) > 0.04) {
+            drag.startAtCenterH = false;
+          }
+        } else if (!drag.unlockedCenterH && Math.abs(rawX - 0.5) <= 0.035) {
+          rawX = 0.5;
+          guides.push({
+            type: 'vertical',
+            percent: 50,
+            label: 'Hook Centered',
+          });
+        } else if (Math.abs(rawX - 0.5) > 0.07) {
+          drag.unlockedCenterH = true;
+        }
+
+        // Top Guide Magnet (22%)
+        if (Math.abs(rawY - 0.22) <= 0.025) {
+          rawY = 0.22;
+          guides.push({
+            type: 'horizontal',
+            percent: 22,
+            label: 'Top Safe Zone Guide',
+          });
+        }
+      }
+
+      setActiveSnapGuides(guides);
       updateIntroHook({
-        positionX: parseFloat(newX.toFixed(3)),
-        positionY: parseFloat(newY.toFixed(3)),
+        positionX: parseFloat(Math.max(0.08, Math.min(0.92, rawX)).toFixed(3)),
+        positionY: parseFloat(Math.max(0.06, Math.min(0.94, rawY)).toFixed(3)),
       });
       return;
     }
@@ -393,17 +516,138 @@ export default function PreviewPlayer() {
       const cropFactorX = currentRegion.crop.width / Math.max(1, drag.regionWidthPx);
       const cropFactorY = effectiveCropHNorm / Math.max(1, drag.regionHeightPx);
 
-      const newCropX = parseFloat((drag.cropX - deltaPxX * cropFactorX).toFixed(3));
-      const newCropY = parseFloat((drag.cropY - deltaPxY * cropFactorY).toFixed(3));
+      // Raw target crop coordinates based directly on mouse movement
+      const rawCropX = drag.cropX - deltaPxX * cropFactorX;
+      const rawCropY = drag.cropY - deltaPxY * cropFactorY;
+
+      let newCropX = rawCropX;
+      let newCropY = rawCropY;
+      const guides: SnapGuideInfo[] = [];
+
+      if (isSnapping) {
+        // Snap zone in normalized crop coordinates (~25-35px screen distance)
+        const SNAP_ZONE = 0.038;
+        // Breakaway pull threshold for continuous single drag
+        const BREAKAWAY = 0.075;
+
+        // --- Y AXIS BARRIER SNAPPING ---
+        const bottomBarrier = 1.0 - effectiveCropHNorm;
+        const centerBarrierY = (1.0 - effectiveCropHNorm) / 2;
+
+        // 1. Top Barrier (y = 0)
+        if (drag.startAtTop) {
+          // USER STARTED DRAG AT TOP BARRIER:
+          // "if i do it again it then should go past the barrier" -> PASS THROUGH FREELY!
+          if (rawCropY > SNAP_ZONE * 1.5) {
+            // If they pulled downwards back inside the video, re-arm snapping
+            drag.startAtTop = false;
+          }
+          newCropY = rawCropY;
+        } else if (!drag.unlockedTop && rawCropY <= SNAP_ZONE && rawCropY >= -BREAKAWAY) {
+          // Snapping tightly to top barrier!
+          newCropY = 0;
+          guides.push({
+            type: 'horizontal',
+            percent: currentRegion.targetBounds.y * 100,
+            label: 'Top Barrier (Snapped)',
+          });
+        } else if (rawCropY < -BREAKAWAY) {
+          // User pulled strongly past barrier in single continuous drag
+          drag.unlockedTop = true;
+          newCropY = rawCropY + BREAKAWAY;
+        } else if (!drag.startAtCenterY && Math.abs(rawCropY - centerBarrierY) <= SNAP_ZONE * 0.75) {
+          // Center Y Alignment
+          newCropY = centerBarrierY;
+          guides.push({
+            type: 'horizontal',
+            percent: (currentRegion.targetBounds.y + currentRegion.targetBounds.height / 2) * 100,
+            label: 'Center Y (Snapped)',
+          });
+        } else if (drag.startAtBottom) {
+          // Started at bottom barrier -> pass through
+          if (rawCropY < bottomBarrier - SNAP_ZONE * 1.5) {
+            drag.startAtBottom = false;
+          }
+          newCropY = rawCropY;
+        } else if (
+          !drag.unlockedBottom &&
+          (Math.abs(rawCropY - bottomBarrier) <= SNAP_ZONE ||
+            (rawCropY > bottomBarrier && rawCropY <= bottomBarrier + BREAKAWAY))
+        ) {
+          // Snapping tightly to bottom barrier!
+          newCropY = bottomBarrier;
+          guides.push({
+            type: 'horizontal',
+            percent: (currentRegion.targetBounds.y + currentRegion.targetBounds.height) * 100,
+            label: 'Bottom Barrier (Snapped)',
+          });
+        } else if (rawCropY > bottomBarrier + BREAKAWAY) {
+          drag.unlockedBottom = true;
+          newCropY = rawCropY - BREAKAWAY;
+        }
+
+        // --- X AXIS BARRIER SNAPPING ---
+        const rightBarrier = 1.0 - currentRegion.crop.width;
+        const centerBarrierX = (1.0 - currentRegion.crop.width) / 2;
+
+        // 2. Left Barrier (x = 0)
+        if (drag.startAtLeft) {
+          if (rawCropX > SNAP_ZONE * 1.5) {
+            drag.startAtLeft = false;
+          }
+          newCropX = rawCropX;
+        } else if (!drag.unlockedLeft && rawCropX <= SNAP_ZONE && rawCropX >= -BREAKAWAY) {
+          newCropX = 0;
+          guides.push({
+            type: 'vertical',
+            percent: currentRegion.targetBounds.x * 100,
+            label: 'Left Barrier (Snapped)',
+          });
+        } else if (rawCropX < -BREAKAWAY) {
+          drag.unlockedLeft = true;
+          newCropX = rawCropX + BREAKAWAY;
+        } else if (!drag.startAtCenterX && Math.abs(rawCropX - centerBarrierX) <= SNAP_ZONE * 0.75) {
+          // Center X Alignment
+          newCropX = centerBarrierX;
+          guides.push({
+            type: 'vertical',
+            percent: (currentRegion.targetBounds.x + currentRegion.targetBounds.width / 2) * 100,
+            label: 'Center X (Snapped)',
+          });
+        } else if (drag.startAtRight) {
+          if (rawCropX < rightBarrier - SNAP_ZONE * 1.5) {
+            drag.startAtRight = false;
+          }
+          newCropX = rawCropX;
+        } else if (
+          !drag.unlockedRight &&
+          (Math.abs(rawCropX - rightBarrier) <= SNAP_ZONE ||
+            (rawCropX > rightBarrier && rawCropX <= rightBarrier + BREAKAWAY))
+        ) {
+          // Snapping tightly to right barrier!
+          newCropX = rightBarrier;
+          guides.push({
+            type: 'vertical',
+            percent: (currentRegion.targetBounds.x + currentRegion.targetBounds.width) * 100,
+            label: 'Right Barrier (Snapped)',
+          });
+        } else if (rawCropX > rightBarrier + BREAKAWAY) {
+          drag.unlockedRight = true;
+          newCropX = rawCropX - BREAKAWAY;
+        }
+      }
+
+      setActiveSnapGuides(guides);
 
       updateRegionCrop(drag.regionId, {
-        x: newCropX,
-        y: newCropY,
+        x: parseFloat(newCropX.toFixed(3)),
+        y: parseFloat(newCropY.toFixed(3)),
       });
     }
   };
 
   const handleMouseUp = () => {
+    setActiveSnapGuides([]);
     setIsDragging(false);
     setDragMode(null);
     dragStartRef.current = null;
@@ -538,36 +782,114 @@ export default function PreviewPlayer() {
             ))}
           </div>
 
+          {/* Magnetic Snap Guidelines */}
+          {activeSnapGuides.map((guide, idx) => (
+            <div
+              key={idx}
+              style={{
+                position: 'absolute',
+                ...(guide.type === 'horizontal'
+                  ? {
+                      top: `${Math.max(0, Math.min(100, guide.percent))}%`,
+                      left: 0,
+                      right: 0,
+                      height: '2px',
+                    }
+                  : {
+                      left: `${Math.max(0, Math.min(100, guide.percent))}%`,
+                      top: 0,
+                      bottom: 0,
+                      width: '2px',
+                    }),
+              }}
+              className="z-40 pointer-events-none bg-cyan-400 shadow-[0_0_10px_#00F0FF,0_0_20px_#00F0FF] flex items-center justify-center animate-pulse"
+            >
+              <div
+                className={`px-2 py-0.5 rounded-full bg-slate-950/95 border border-cyan-400 text-cyan-300 font-bold text-[10px] shadow-2xl tracking-wider uppercase flex items-center gap-1 ${
+                  guide.type === 'horizontal' ? '-translate-y-3.5' : '-translate-x-3.5'
+                }`}
+              >
+                <span className="text-xs">🧲</span>
+                <span>{guide.label}</span>
+              </div>
+            </div>
+          ))}
+
           {/* Active Dragging Feedback Banners */}
           {isDragging && dragMode === 'region' && (
             <div className="absolute top-4 inset-x-0 flex justify-center pointer-events-none z-40">
-              <span className="px-3 py-1 rounded-full bg-blue-600/90 text-white font-bold text-xs shadow-lg backdrop-blur flex items-center gap-1.5 animate-in fade-in">
-                <Move className="w-3.5 h-3.5" />
-                <span>Panning Region...</span>
+              <span
+                className={`px-3 py-1 rounded-full font-bold text-xs shadow-lg backdrop-blur flex items-center gap-1.5 animate-in fade-in ${
+                  activeSnapGuides.length > 0
+                    ? 'bg-cyan-600/95 text-white ring-2 ring-cyan-300 shadow-cyan-500/30'
+                    : 'bg-blue-600/90 text-white'
+                }`}
+              >
+                {activeSnapGuides.length > 0 ? (
+                  <>
+                    <span>🧲</span>
+                    <span>{activeSnapGuides[0].label} (Drag again to go past)</span>
+                  </>
+                ) : (
+                  <>
+                    <Move className="w-3.5 h-3.5" />
+                    <span>Panning Region...</span>
+                  </>
+                )}
               </span>
             </div>
           )}
 
           {isDragging && dragMode === 'subtitle' && (
             <div className="absolute top-4 inset-x-0 flex justify-center pointer-events-none z-40">
-              <span className="px-3 py-1 rounded-full bg-cyan-600/90 text-white font-bold text-xs shadow-lg backdrop-blur flex items-center gap-1.5 animate-in fade-in">
-                <Move className="w-3.5 h-3.5" />
-                <span>
-                  Positioning Captions ({project.subtitleStyle.horizontalOffset || 0}px,{' '}
-                  {project.subtitleStyle.verticalOffset || 0}px)
-                </span>
+              <span
+                className={`px-3 py-1 rounded-full font-bold text-xs shadow-lg backdrop-blur flex items-center gap-1.5 animate-in fade-in ${
+                  activeSnapGuides.length > 0
+                    ? 'bg-cyan-600/95 text-white ring-2 ring-cyan-300'
+                    : 'bg-cyan-600/90 text-white'
+                }`}
+              >
+                {activeSnapGuides.length > 0 ? (
+                  <>
+                    <span>🧲</span>
+                    <span>{activeSnapGuides[0].label}</span>
+                  </>
+                ) : (
+                  <>
+                    <Move className="w-3.5 h-3.5" />
+                    <span>
+                      Captions ({project.subtitleStyle.horizontalOffset || 0}px,{' '}
+                      {project.subtitleStyle.verticalOffset || 0}px)
+                    </span>
+                  </>
+                )}
               </span>
             </div>
           )}
 
           {isDragging && dragMode === 'hook' && (
             <div className="absolute top-4 inset-x-0 flex justify-center pointer-events-none z-40">
-              <span className="px-3 py-1 rounded-full bg-amber-600/90 text-white font-bold text-xs shadow-lg backdrop-blur flex items-center gap-1.5 animate-in fade-in">
-                <Move className="w-3.5 h-3.5" />
-                <span>
-                  Positioning Hook ({Math.round((project.introHook?.positionX ?? 0.5) * 100)}%,{' '}
-                  {Math.round((project.introHook?.positionY ?? 0.22) * 100)}%)
-                </span>
+              <span
+                className={`px-3 py-1 rounded-full font-bold text-xs shadow-lg backdrop-blur flex items-center gap-1.5 animate-in fade-in ${
+                  activeSnapGuides.length > 0
+                    ? 'bg-amber-600/95 text-white ring-2 ring-amber-300'
+                    : 'bg-amber-600/90 text-white'
+                }`}
+              >
+                {activeSnapGuides.length > 0 ? (
+                  <>
+                    <span>🧲</span>
+                    <span>{activeSnapGuides[0].label}</span>
+                  </>
+                ) : (
+                  <>
+                    <Move className="w-3.5 h-3.5" />
+                    <span>
+                      Hook ({Math.round((project.introHook?.positionX ?? 0.5) * 100)}%,{' '}
+                      {Math.round((project.introHook?.positionY ?? 0.22) * 100)}%)
+                    </span>
+                  </>
+                )}
               </span>
             </div>
           )}
@@ -692,7 +1014,6 @@ export default function PreviewPlayer() {
                 {activeSubtitle.words && activeSubtitle.words.length > 0 ? (
                   activeSubtitle.words.map((w, idx) => {
                     const isActive = currentTime >= w.start && currentTime <= w.end;
-                    // Individual word custom color takes priority, followed by karaoke highlight, followed by base color
                     const wordColor =
                       w.color ||
                       (isActive && project.subtitleStyle.animation === 'karaoke_highlight'
@@ -746,7 +1067,7 @@ export default function PreviewPlayer() {
         </div>
       </div>
 
-      {/* Playhead Controls, Time Display & Timeline Toggle Bar */}
+      {/* Playhead Controls, Time Display & Timeline / Snap Toolbar */}
       <div className="w-full max-w-2xl bg-slate-900/90 border border-slate-800 rounded-2xl px-4 py-2.5 mt-2.5 flex items-center justify-between gap-3 backdrop-blur shadow-xl">
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Skip Back 1 frame */}
@@ -793,8 +1114,22 @@ export default function PreviewPlayer() {
           <span className="text-slate-400">{duration.toFixed(2)}s</span>
         </div>
 
-        {/* Timeline Toggle & Audio Controls */}
+        {/* Snapping, Timeline Toggle & Audio Controls */}
         <div className="flex items-center gap-2">
+          {/* Magnetic Snapping Toggle */}
+          <button
+            onClick={toggleSnapping}
+            title={snappingEnabled ? 'Magnetic Snapping: Active (Hold Shift to bypass)' : 'Magnetic Snapping: Inactive'}
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition ${
+              snappingEnabled
+                ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/30 shadow-md shadow-cyan-500/10'
+                : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-xs">🧲</span>
+            <span className="hidden sm:inline">{snappingEnabled ? 'Snap: ON' : 'Snap: OFF'}</span>
+          </button>
+
           {/* Hide / Show Timeline Button */}
           <button
             onClick={toggleTimeline}

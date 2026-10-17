@@ -22,6 +22,7 @@ interface EditorState {
   selectedOverlayType: 'region' | 'subtitle' | 'hook' | null;
   safeZoneVisible: boolean;
   isTimelineVisible: boolean;
+  snappingEnabled: boolean;
 
   // History for Undo/Redo (at least 50 steps)
   history: Project[];
@@ -41,6 +42,8 @@ interface EditorState {
   setSafeZoneVisible: (visible: boolean) => void;
   setIsTimelineVisible: (visible: boolean) => void;
   toggleTimeline: () => void;
+  setSnappingEnabled: (enabled: boolean) => void;
+  toggleSnapping: () => void;
   setSelectedRegionId: (id: string | null) => void;
   setSelectedSubtitleId: (id: string | null) => void;
   setSelectedClipId: (id: string | null) => void;
@@ -76,6 +79,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedOverlayType: null,
   safeZoneVisible: true,
   isTimelineVisible: true,
+  snappingEnabled: true,
 
   history: [],
   historyIndex: -1,
@@ -151,6 +155,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setSafeZoneVisible: (safeZoneVisible) => set({ safeZoneVisible }),
   setIsTimelineVisible: (isTimelineVisible) => set({ isTimelineVisible }),
   toggleTimeline: () => set((state) => ({ isTimelineVisible: !state.isTimelineVisible })),
+  setSnappingEnabled: (snappingEnabled) => set({ snappingEnabled }),
+  toggleSnapping: () => set((state) => ({ snappingEnabled: !state.snappingEnabled })),
   setSelectedRegionId: (id) => set({ selectedRegionId: id, selectedOverlayType: id ? 'region' : null }),
   setSelectedSubtitleId: (id) => set({ selectedSubtitleId: id, selectedOverlayType: id ? 'subtitle' : null }),
   setSelectedClipId: (id) => set({ selectedClipId: id }),
