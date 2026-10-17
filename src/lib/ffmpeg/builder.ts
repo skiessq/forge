@@ -57,9 +57,39 @@ export function buildFFmpegExportCommand(
     }
   }
 
+  // Check if timeline video track has trims or splits
+  const videoTrack = project.tracks.find((t) => t.type === 'video');
+  const clips = videoTrack?.clips || [];
+  let baseVideoInputNode = '[0:v]';
+
+  // If clips are trimmed or split into multiple segments
+  if (clips.length === 1 && (clips[0].sourceStart > 0 || clips[0].duration < (project.source.probe?.duration || 10) - 0.1)) {
+    const c = clips[0];
+    filterChains.push(
+      `[0:v]trim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},setpts=PTS-STARTPTS[v_trimmed]`
+    );
+    baseVideoInputNode = '[v_trimmed]';
+  } else if (clips.length > 1) {
+    const segStreams: string[] = [];
+    clips.forEach((c, idx) => {
+      const segStream = `[seg_v_${idx}]`;
+      filterChains.push(
+        `[0:v]trim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},setpts=PTS-STARTPTS${segStream}`
+      );
+      segStreams.push(segStream);
+    });
+    filterChains.push(
+      `${segStreams.join('')}concat=n=${clips.length}:v=1:a=0[v_concatenated]`
+    );
+    baseVideoInputNode = '[v_concatenated]';
+  }
+
   // Source video dimensions
   const srcW = project.source.probe?.width || 1920;
   const srcH = project.source.probe?.height || 1080;
+
+  // Split input into 2 streams so multi-region layouts can each consume one
+  filterChains.push(`${baseVideoInputNode}split=2[v_in_1][v_in_2]`);
 
   const tpl = project.layout.templateId;
   const splitRatio = project.layout.splitRatio || 0.5;
@@ -77,7 +107,7 @@ export function buildFFmpegExportCommand(
       const cropY = Math.round(srcH * reg.crop.y);
 
       filterChains.push(
-        `[0:v]crop=${cropW}:${cropH}:${cropX}:${cropY},scale=${canvasWidth}:${canvasHeight},setsar=1${finalVideoStream}`
+        `[v_in_1]crop=${cropW}:${cropH}:${cropX}:${cropY},scale=${canvasWidth}:${canvasHeight},setsar=1${finalVideoStream}`
       );
       break;
     }
@@ -96,7 +126,7 @@ export function buildFFmpegExportCommand(
       const topCropX = Math.round(srcW * regTop.crop.x);
       const topCropY = Math.round(srcH * regTop.crop.y);
       filterChains.push(
-        `[0:v]crop=${topCropW}:${topCropH}:${topCropX}:${topCropY},scale=${canvasWidth}:${topH},setsar=1[v_top]`
+        `[v_in_1]crop=${topCropW}:${topCropH}:${topCropX}:${topCropY},scale=${canvasWidth}:${topH},setsar=1[v_top]`
       );
 
       // Crop bottom
@@ -105,7 +135,7 @@ export function buildFFmpegExportCommand(
       const botCropX = Math.round(srcW * regBottom.crop.x);
       const botCropY = Math.round(srcH * regBottom.crop.y);
       filterChains.push(
-        `[0:v]crop=${botCropW}:${botCropH}:${botCropX}:${botCropY},scale=${canvasWidth}:${bottomH},setsar=1[v_bot]`
+        `[v_in_2]crop=${botCropW}:${botCropH}:${botCropX}:${botCropY},scale=${canvasWidth}:${bottomH},setsar=1[v_bot]`
       );
 
       // Stack top and bottom
@@ -138,16 +168,14 @@ export function buildFFmpegExportCommand(
       const gCropY = Math.round(srcH * gameReg.crop.y);
 
       filterChains.push(
-        `[0:v]crop=${gCropW}:${gCropH}:${gCropX}:${gCropY},scale=${canvasWidth}:${gameH},setsar=1[v_game]`
+        `[v_in_1]crop=${gCropW}:${gCropH}:${gCropX}:${gCropY},scale=${canvasWidth}:${gameH},setsar=1[v_game]`
       );
 
       if (secondaryInputIndex >= 0) {
-        // Scale secondary media to slot
         filterChains.push(
           `[${secondaryInputIndex}:v]scale=${canvasWidth}:${mediaH}:force_original_aspect_ratio=decrease,pad=${canvasWidth}:${mediaH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v_media]`
         );
       } else {
-        // Fallback color box if no media attached yet
         filterChains.push(`color=c=0x1E293B:s=${canvasWidth}x${mediaH}:duration=10[v_media]`);
       }
 
@@ -170,13 +198,13 @@ export function buildFFmpegExportCommand(
     case 'blurred_background_fit': {
       // 1. Zoomed, cropped, heavily blurred background filling 1080x1920
       filterChains.push(
-        `[0:v]scale=${canvasWidth}:${canvasHeight}:force_original_aspect_ratio=increase,crop=${canvasWidth}:${canvasHeight},boxblur=25:5[v_blur_bg]`
+        `[v_in_1]scale=${canvasWidth}:${canvasHeight}:force_original_aspect_ratio=increase,crop=${canvasWidth}:${canvasHeight},boxblur=25:5[v_blur_bg]`
       );
 
       // 2. Crisp centered video scaled to fit with padding or margin
       const targetW = makeEven(canvasWidth * 0.96);
       filterChains.push(
-        `[0:v]scale=${targetW}:-2,setsar=1[v_crisp_fg]`,
+        `[v_in_2]scale=${targetW}:-2,setsar=1[v_crisp_fg]`,
         `[v_blur_bg][v_crisp_fg]overlay=(W-w)/2:(H-h)/2${finalVideoStream}`
       );
       break;
@@ -193,7 +221,7 @@ export function buildFFmpegExportCommand(
       const mCropY = Math.round(srcH * mainReg.crop.y);
 
       filterChains.push(
-        `[0:v]crop=${mCropW}:${mCropH}:${mCropX}:${mCropY},scale=${canvasWidth}:${canvasHeight},setsar=1[v_base]`
+        `[v_in_1]crop=${mCropW}:${mCropH}:${mCropX}:${mCropY},scale=${canvasWidth}:${canvasHeight},setsar=1[v_base]`
       );
 
       // PiP Overlay Facecam
@@ -208,7 +236,7 @@ export function buildFFmpegExportCommand(
       const pCropX = Math.round(srcW * pipReg.crop.x);
       const pCropY = Math.round(srcH * pipReg.crop.y);
 
-      let pipChain = `[0:v]crop=${pCropW}:${pCropH}:${pCropX}:${pCropY},scale=${pipW}:${pipH},setsar=1`;
+      let pipChain = `[v_in_2]crop=${pCropW}:${pCropH}:${pCropX}:${pCropY},scale=${pipW}:${pipH},setsar=1`;
       if (pipReg.borderWidth && pipReg.borderWidth > 0) {
         pipChain += `,drawbox=x=0:y=0:w=${pipW}:h=${pipH}:color=white@1:t=${pipReg.borderWidth}`;
       }
