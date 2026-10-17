@@ -58,7 +58,8 @@ export function buildFFmpegExportCommand(
   }
 
   // Check if timeline video track has trims or splits
-  const videoTrack = project.tracks.find((t) => t.type === 'video');
+  const allTracks = project.tracks || project.timeline?.tracks || [];
+  const videoTrack = allTracks.find((t) => t.type === 'video');
   const clips = videoTrack?.clips || [];
   let baseVideoInputNode = '[0:v]';
 
@@ -261,14 +262,31 @@ export function buildFFmpegExportCommand(
     encoderArgs.push('-preset', preset, '-crf', '19');
   }
 
-  // Intro hook text overlay (first 1-3 seconds)
+  // Intro hook text overlay (first 1-5 seconds)
   if (project.introHook?.enabled && project.introHook.text) {
-    const hookText = project.introHook.text.replace(/'/g, '').replace(/:/g, '').trim();
+    const rawText = project.introHook.text.replace(/'/g, '').replace(/:/g, '').replace(/\*/g, '').trim();
     const hookDur = project.introHook.duration || 2.5;
     const hookColor = (project.introHook.color || '#FFE600').replace('#', '0x');
     const hookFontSize = Math.round((project.introHook.fontSize || 56) * 1.0);
+    const posXNorm = project.introHook.positionX ?? 0.5;
+    const posYNorm = project.introHook.positionY ?? 0.22;
+    const hookPad = project.introHook.backgroundPadding ?? 16;
+    const hookBorderW = project.introHook.outlineWidth ?? 2;
+    const hookBorderColor = (project.introHook.outlineColor || '#000000').replace('#', '0x');
+
+    const hookX = Math.abs(posXNorm - 0.5) < 0.02 ? '(w-text_w)/2' : `(w*${posXNorm})-(text_w/2)`;
+    let hookY = `(h*${posYNorm})-(text_h/2)`;
+
+    if (project.introHook.transition === 'slide_down') {
+      hookY = `if(lt(t,0.4),(h*${posYNorm})-(text_h/2)-100*(1-t/0.4),(h*${posYNorm})-(text_h/2))`;
+    } else if (project.introHook.transition === 'bounce_drop') {
+      hookY = `if(lt(t,0.5),(h*${posYNorm})-(text_h/2)-160*(1-t/0.5)*(1-t/0.5),(h*${posYNorm})-(text_h/2))`;
+    }
+
+    const alphaExpr = `if(lt(t,0.25),t/0.25,if(gt(t,${hookDur}-0.25),(${hookDur}-t)/0.25,1))`;
+
     filterChains.push(
-      `${finalVideoStream}drawtext=text='${hookText}':fontsize=${hookFontSize}:fontcolor=${hookColor}:box=1:boxcolor=black@0.75:boxborderw=16:x=(w-text_w)/2:y=h*0.22:enable='between(t,0,${hookDur})'[v_hook]`
+      `${finalVideoStream}drawtext=text='${rawText}':fontsize=${hookFontSize}:fontcolor=${hookColor}:borderw=${hookBorderW}:bordercolor=${hookBorderColor}:box=1:boxcolor=black@0.75:boxborderw=${hookPad}:x=${hookX}:y=${hookY}:alpha='${alphaExpr}':enable='between(t,0,${hookDur})'[v_hook]`
     );
     finalVideoStream = '[v_hook]';
   }

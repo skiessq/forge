@@ -73,6 +73,8 @@ export interface SubtitleWord {
   word: string;
   start: number; // seconds
   end: number; // seconds
+  color?: string; // custom individual color override
+  highlight?: boolean; // keyword flag
 }
 
 export interface SubtitleItem {
@@ -83,7 +85,14 @@ export interface SubtitleItem {
   words?: SubtitleWord[];
 }
 
-export type SubtitleAnimation = 'none' | 'karaoke_highlight' | 'pop_in' | 'fade' | 'typewriter';
+export type SubtitleAnimation =
+  | 'none'
+  | 'karaoke_highlight'
+  | 'pop_in'
+  | 'fade'
+  | 'typewriter'
+  | 'bounce_word'
+  | 'neon_glow';
 
 export interface SubtitleStyle {
   fontFamily: string;
@@ -99,7 +108,8 @@ export interface SubtitleStyle {
   backgroundBorderRadius?: number;
   textTransform: 'none' | 'uppercase' | 'lowercase';
   position: 'top' | 'middle' | 'bottom';
-  verticalOffset: number; // fine adjustment in px
+  verticalOffset: number; // fine adjustment in px (-150 .. 150)
+  horizontalOffset?: number; // fine horizontal adjustment in px (-150 .. 150)
   maxWordsPerLine: number;
   lineSpacing: number;
   animation: SubtitleAnimation;
@@ -177,12 +187,24 @@ export interface ExportSettings {
   outputFileName: string;
 }
 
+export type IntroHookTransition = 'pop_in' | 'bounce_drop' | 'zoom_pop' | 'slide_down' | 'glitch' | 'fade_zoom';
+
 export interface IntroHookConfig {
   enabled: boolean;
   text: string;
-  duration: number;
-  fontSize: number;
-  color: string;
+  duration: number; // seconds, e.g. 2.5
+  fontSize: number; // e.g. 56
+  fontFamily?: string; // e.g. Montserrat, Anton, Bebas Neue
+  color: string; // text color e.g. #FFE600
+  highlightColor?: string; // secondary punch color
+  outlineColor?: string;
+  outlineWidth?: number;
+  backgroundColor?: string;
+  backgroundPadding?: number;
+  borderRadius?: number;
+  transition?: IntroHookTransition;
+  positionX?: number; // normalized 0..1 (default 0.5 center)
+  positionY?: number; // normalized 0..1 (default 0.22)
 }
 
 export interface WatermarkConfig {

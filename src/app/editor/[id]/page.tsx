@@ -17,10 +17,29 @@ export default function EditorPage() {
   const router = useRouter();
   const projectId = params.id as string;
 
-  const { project, setProject, saveToServer } = useEditorStore();
+  const { project, setProject, saveToServer, isTimelineVisible, toggleTimeline } = useEditorStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
+
+  // Keyboard shortcut: 't' toggles timeline visibility
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement).isContentEditable
+      ) {
+        return;
+      }
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        toggleTimeline();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleTimeline]);
 
   useEffect(() => {
     let isMounted = true;
@@ -111,8 +130,8 @@ export default function EditorPage() {
         <RightProperties />
       </div>
 
-      {/* Bottom Multi-Track Timeline */}
-      <Timeline />
+      {/* Bottom Multi-Track Timeline (collapsible for huge full preview) */}
+      {isTimelineVisible && <Timeline />}
 
       {/* Export MP4 Dialog */}
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />

@@ -19,7 +19,9 @@ interface EditorState {
   selectedClipId: string | null;
   selectedRegionId: string | null;
   selectedSubtitleId: string | null;
+  selectedOverlayType: 'region' | 'subtitle' | 'hook' | null;
   safeZoneVisible: boolean;
+  isTimelineVisible: boolean;
 
   // History for Undo/Redo (at least 50 steps)
   history: Project[];
@@ -37,9 +39,12 @@ interface EditorState {
   setIsPlaying: (playing: boolean) => void;
   setZoom: (zoom: number) => void;
   setSafeZoneVisible: (visible: boolean) => void;
+  setIsTimelineVisible: (visible: boolean) => void;
+  toggleTimeline: () => void;
   setSelectedRegionId: (id: string | null) => void;
   setSelectedSubtitleId: (id: string | null) => void;
   setSelectedClipId: (id: string | null) => void;
+  setSelectedOverlayType: (type: 'region' | 'subtitle' | 'hook' | null) => void;
 
   setCanvasAspectRatio: (ratio: AspectRatio) => void;
   setLayoutTemplate: (templateId: LayoutTemplateId) => void;
@@ -47,6 +52,8 @@ interface EditorState {
   updateRegionCrop: (regionId: string, crop: Partial<CropRect>) => void;
   zoomRegion: (regionId: string, zoomFactor: number) => void;
   resetRegionCrop: (regionId: string) => void;
+  updateSubtitleStyle: (style: Partial<SubtitleStyle>) => void;
+  updateIntroHook: (hook: Partial<IntroHookConfig>) => void;
 
   saveToServer: () => Promise<void>;
 }
@@ -66,7 +73,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedClipId: null,
   selectedRegionId: null,
   selectedSubtitleId: null,
+  selectedOverlayType: null,
   safeZoneVisible: true,
+  isTimelineVisible: true,
 
   history: [],
   historyIndex: -1,
@@ -140,9 +149,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   setZoom: (zoom) => set({ zoom: Math.max(10, Math.min(200, zoom)) }),
   setSafeZoneVisible: (safeZoneVisible) => set({ safeZoneVisible }),
-  setSelectedRegionId: (id) => set({ selectedRegionId: id }),
-  setSelectedSubtitleId: (id) => set({ selectedSubtitleId: id }),
+  setIsTimelineVisible: (isTimelineVisible) => set({ isTimelineVisible }),
+  toggleTimeline: () => set((state) => ({ isTimelineVisible: !state.isTimelineVisible })),
+  setSelectedRegionId: (id) => set({ selectedRegionId: id, selectedOverlayType: id ? 'region' : null }),
+  setSelectedSubtitleId: (id) => set({ selectedSubtitleId: id, selectedOverlayType: id ? 'subtitle' : null }),
   setSelectedClipId: (id) => set({ selectedClipId: id }),
+  setSelectedOverlayType: (selectedOverlayType) => set({ selectedOverlayType }),
 
   setCanvasAspectRatio: (ratio) => {
     const preset = CANVAS_PRESETS[ratio];
@@ -265,6 +277,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       return draft;
     }, true);
+  },
+
+  updateSubtitleStyle: (style) => {
+    get().updateProject((draft) => {
+      draft.subtitleStyle = {
+        ...draft.subtitleStyle,
+        ...style,
+      };
+      return draft;
+    }, false);
+  },
+
+  updateIntroHook: (hook) => {
+    get().updateProject((draft) => {
+      if (!draft.introHook) {
+        draft.introHook = {
+          enabled: true,
+          text: 'WATCH TILL THE END! 🔥',
+          duration: 2.5,
+          fontSize: 56,
+          color: '#FFE600',
+          ...hook,
+        };
+      } else {
+        draft.introHook = {
+          ...draft.introHook,
+          ...hook,
+        };
+      }
+      return draft;
+    }, false);
   },
 
   saveToServer: async () => {

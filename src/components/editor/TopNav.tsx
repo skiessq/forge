@@ -16,6 +16,8 @@ import {
   Save,
   CheckCircle2,
   Scissors,
+  PanelBottomClose,
+  PanelBottomOpen,
 } from 'lucide-react';
 import { AspectRatio } from '@/lib/types';
 
@@ -33,6 +35,8 @@ export default function TopNav({ onOpenExport }: Props) {
     canRedo,
     safeZoneVisible,
     setSafeZoneVisible,
+    isTimelineVisible,
+    toggleTimeline,
     setCanvasAspectRatio,
     isSaving,
     lastSavedAt,
@@ -146,6 +150,24 @@ export default function TopNav({ onOpenExport }: Props) {
         >
           {safeZoneVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           <span>Safe Zone</span>
+        </button>
+
+        {/* Timeline visibility toggle (for massive full preview) */}
+        <button
+          onClick={toggleTimeline}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition ${
+            !isTimelineVisible
+              ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 shadow-sm'
+              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+          }`}
+          title="Toggle Timeline (Shortcut: T) to expand video preview"
+        >
+          {isTimelineVisible ? (
+            <PanelBottomClose className="w-3.5 h-3.5" />
+          ) : (
+            <PanelBottomOpen className="w-3.5 h-3.5" />
+          )}
+          <span>{isTimelineVisible ? 'Hide Timeline' : 'Show Timeline'}</span>
         </button>
       </div>
 

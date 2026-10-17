@@ -12,8 +12,11 @@ import {
   Sliders,
   Check,
   Scissors,
+  Play,
+  Move,
 } from 'lucide-react';
-import { LayoutTemplateId } from '@/lib/types';
+import { LayoutTemplateId, IntroHookTransition } from '@/lib/types';
+import { BUILT_IN_FONTS } from '@/lib/constants';
 import { ProjectTemplate } from '@/lib/storage/templates';
 import SilenceRemovalModal from './SilenceRemovalModal';
 import SubtitleEditor from './SubtitleEditor';
@@ -21,7 +24,7 @@ import AutoSplitModal from './AutoSplitModal';
 import { Bookmark, FolderDown, PlusCircle } from 'lucide-react';
 
 export default function LeftSidebar() {
-  const { project, setLayoutTemplate, setSplitRatio, updateProject } = useEditorStore();
+  const { project, setLayoutTemplate, setSplitRatio, updateProject, setCurrentTime, setIsPlaying } = useEditorStore();
   const [activeTab, setActiveTab] = useState<'layout' | 'media' | 'subtitles' | 'audio' | 'effects' | 'presets'>('layout');
   const [isSilenceModalOpen, setIsSilenceModalOpen] = useState(false);
   const [isAutoSplitOpen, setIsAutoSplitOpen] = useState(false);
@@ -508,19 +511,35 @@ export default function LeftSidebar() {
         {/* TAB 4: EFFECTS & HOOKS */}
         {activeTab === 'effects' && (
           <div className="space-y-4 text-xs">
-            {/* Intro Hook Text */}
+            {/* Intro Hook Studio */}
             <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-white uppercase tracking-wider text-[10px]">
-                  Intro Hook Text
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-white uppercase tracking-wider text-[10px]">
+                    Intro Hook Headline
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                    Viral
+                  </span>
+                </div>
                 <input
                   type="checkbox"
                   checked={project.introHook?.enabled ?? false}
                   onChange={(e) => {
                     updateProject((draft) => {
                       if (!draft.introHook) {
-                        draft.introHook = { enabled: true, text: 'WATCH TILL THE END! 🔥', duration: 2.5, fontSize: 56, color: '#FFE600' };
+                        draft.introHook = {
+                          enabled: true,
+                          text: 'WATCH TILL THE END! 🔥',
+                          duration: 2.5,
+                          fontSize: 56,
+                          color: '#FFE600',
+                          highlightColor: '#FFFFFF',
+                          fontFamily: 'Montserrat',
+                          transition: 'bounce_drop',
+                          positionX: 0.5,
+                          positionY: 0.22,
+                        };
                       } else {
                         draft.introHook.enabled = e.target.checked;
                       }
@@ -532,9 +551,26 @@ export default function LeftSidebar() {
               </div>
 
               {project.introHook?.enabled && (
-                <div className="space-y-2.5 pt-1">
+                <div className="space-y-3 pt-1">
+                  {/* Test Playback button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentTime(0);
+                      setIsPlaying(true);
+                    }}
+                    className="w-full py-1.5 rounded-lg bg-gradient-to-r from-amber-600/30 to-amber-500/20 hover:from-amber-600/40 hover:to-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition active:scale-98 shadow-sm"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-amber-300" />
+                    <span>Preview Hook Transition (0s)</span>
+                  </button>
+
+                  {/* Hook Text Input with highlight tips */}
                   <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Hook Text</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[11px] text-slate-400 font-medium">Hook Headline</label>
+                      <span className="text-[9px] text-amber-400 font-mono">Wrap *word* to highlight</span>
+                    </div>
                     <input
                       type="text"
                       value={project.introHook.text}
@@ -544,45 +580,198 @@ export default function LeftSidebar() {
                           return draft;
                         });
                       }}
-                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
+                      placeholder="e.g. *WAIT* FOR THE END! 😱"
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-medium"
                     />
                   </div>
 
+                  {/* Transition Effect Selector */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Transition Animation</label>
+                    <select
+                      value={project.introHook.transition || 'bounce_drop'}
+                      onChange={(e) => {
+                        updateProject((draft) => {
+                          if (draft.introHook) {
+                            draft.introHook.transition = e.target.value as IntroHookTransition;
+                          }
+                          return draft;
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-medium"
+                    >
+                      <option value="bounce_drop">💥 Bounce Drop (Viral Pop 🔥)</option>
+                      <option value="zoom_pop">⚡ Zoom Pop (Impact Punch)</option>
+                      <option value="slide_down">⬇ Slide Down (Smooth In)</option>
+                      <option value="glitch">👾 Glitch Jitter (Cyberpunk)</option>
+                      <option value="fade_zoom">🎬 Fade & Zoom (Cinematic)</option>
+                      <option value="pop_in">🎯 Snappy Pop In</option>
+                    </select>
+                  </div>
+
+                  {/* Viral Font Selector */}
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Viral Typography</label>
+                    <select
+                      value={project.introHook.fontFamily || 'Montserrat'}
+                      onChange={(e) => {
+                        updateProject((draft) => {
+                          if (draft.introHook) draft.introHook.fontFamily = e.target.value;
+                          return draft;
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-medium"
+                    >
+                      {BUILT_IN_FONTS.map((font) => (
+                        <option key={font.name} value={font.name}>
+                          {font.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Colors: Primary & Highlight Punch */}
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-slate-400">Duration</span>
-                        <span className="font-mono text-white">{project.introHook.duration}s</span>
+                      <label className="text-[10px] text-slate-400 block mb-1">Primary Color</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          value={project.introHook.color || '#FFE600'}
+                          onChange={(e) => {
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.color = e.target.value;
+                              return draft;
+                            });
+                          }}
+                          className="w-8 h-7 rounded cursor-pointer bg-slate-950 border border-slate-800 flex-shrink-0"
+                        />
+                        <span className="font-mono text-[10px] text-slate-300 uppercase">
+                          {project.introHook.color || '#FFE600'}
+                        </span>
                       </div>
-                      <input
-                        type="range"
-                        min="1.0"
-                        max="5.0"
-                        step="0.5"
-                        value={project.introHook.duration}
-                        onChange={(e) => {
-                          updateProject((draft) => {
-                            if (draft.introHook) draft.introHook.duration = parseFloat(e.target.value);
-                            return draft;
-                          });
-                        }}
-                        className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-blue-500"
-                      />
                     </div>
 
                     <div>
-                      <label className="text-[11px] text-slate-400 block mb-1">Color</label>
-                      <input
-                        type="color"
-                        value={project.introHook.color}
-                        onChange={(e) => {
+                      <label className="text-[10px] text-slate-400 block mb-1">Highlight Color</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          value={project.introHook.highlightColor || '#FFFFFF'}
+                          onChange={(e) => {
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.highlightColor = e.target.value;
+                              return draft;
+                            });
+                          }}
+                          className="w-8 h-7 rounded cursor-pointer bg-slate-950 border border-slate-800 flex-shrink-0"
+                        />
+                        <span className="font-mono text-[10px] text-slate-300 uppercase">
+                          {project.introHook.highlightColor || '#FFFFFF'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Duration Slider */}
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-slate-400">Duration on Screen</span>
+                      <span className="font-mono text-white font-bold">{project.introHook.duration}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1.0"
+                      max="5.0"
+                      step="0.5"
+                      value={project.introHook.duration}
+                      onChange={(e) => {
+                        updateProject((draft) => {
+                          if (draft.introHook) draft.introHook.duration = parseFloat(e.target.value);
+                          return draft;
+                        });
+                      }}
+                      className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-500"
+                    />
+                  </div>
+
+                  {/* Direct Screen Positioning Section */}
+                  <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                        <Move className="w-3 h-3 text-amber-400" />
+                        <span>Screen Positioning</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
                           updateProject((draft) => {
-                            if (draft.introHook) draft.introHook.color = e.target.value;
+                            if (draft.introHook) {
+                              draft.introHook.positionX = 0.5;
+                              draft.introHook.positionY = 0.22;
+                            }
                             return draft;
                           });
                         }}
-                        className="w-full h-6 rounded cursor-pointer bg-slate-950 border border-slate-800"
-                      />
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold"
+                      >
+                        Reset Center
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div>
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-slate-400">Horizontal (X)</span>
+                          <span className="font-mono text-white">
+                            {Math.round((project.introHook.positionX ?? 0.5) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.1"
+                          max="0.9"
+                          step="0.02"
+                          value={project.introHook.positionX ?? 0.5}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.positionX = val;
+                              return draft;
+                            });
+                          }}
+                          className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-slate-400">Vertical (Y)</span>
+                          <span className="font-mono text-white">
+                            {Math.round((project.introHook.positionY ?? 0.22) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.08"
+                          max="0.9"
+                          step="0.02"
+                          value={project.introHook.positionY ?? 0.22}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            updateProject((draft) => {
+                              if (draft.introHook) draft.introHook.positionY = val;
+                              return draft;
+                            });
+                          }}
+                          className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-amber-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-slate-400/90 bg-amber-500/10 border border-amber-500/20 p-1.5 rounded flex items-center gap-1.5">
+                      <span>💡</span>
+                      <span>You can also click & drag the hook directly on the video preview!</span>
                     </div>
                   </div>
                 </div>

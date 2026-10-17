@@ -26,6 +26,7 @@ export default function SubtitleEditor() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [job, setJob] = useState<JobProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [colorTarget, setColorTarget] = useState<{ subId: string; wordIdx: number } | null>(null);
 
   if (!project) return null;
 
@@ -319,18 +320,180 @@ export default function SubtitleEditor() {
                         updateProject((draft) => {
                           draft.subtitles[idx].text = newText;
                           // If words exist, update words proportional to timing
-                          const wordTokens = newText.trim().split(/\s+/);
+                          const wordTokens = newText.trim().split(/\s+/).filter(Boolean);
                           const totalD = sub.end - sub.start;
-                          draft.subtitles[idx].words = wordTokens.map((w, wIdx) => ({
-                            word: w,
-                            start: sub.start + (totalD / wordTokens.length) * wIdx,
-                            end: sub.start + (totalD / wordTokens.length) * (wIdx + 1),
-                          }));
+                          draft.subtitles[idx].words = wordTokens.map((w, wIdx) => {
+                            const prevWord = sub.words?.[wIdx];
+                            return {
+                              word: w,
+                              start: sub.start + (totalD / Math.max(1, wordTokens.length)) * wIdx,
+                              end: sub.start + (totalD / Math.max(1, wordTokens.length)) * (wIdx + 1),
+                              color: prevWord?.color,
+                            };
+                          });
                           return draft;
                         });
                       }}
                       className="w-full bg-slate-950/80 border border-slate-800 focus:border-blue-500 rounded-lg p-2 text-white font-medium resize-none outline-none leading-snug"
                     />
+
+                    {/* Individual Word Colors */}
+                    <div className="space-y-1 pt-1 border-t border-slate-800/80">
+                      <div className="flex justify-between items-center text-[10px] text-slate-400">
+                        <span className="font-semibold text-slate-300">Word Color Customizer:</span>
+                        <span className="text-slate-500">Click word to color</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {(sub.words && sub.words.length > 0
+                          ? sub.words
+                          : sub.text.trim().split(/\s+/).filter(Boolean).map((w, wIdx) => ({
+                              word: w,
+                              start: sub.start + ((sub.end - sub.start) / Math.max(1, sub.text.trim().split(/\s+/).length)) * wIdx,
+                              end: sub.start + ((sub.end - sub.start) / Math.max(1, sub.text.trim().split(/\s+/).length)) * (wIdx + 1),
+                            }))
+                        ).map((w, wIdx) => {
+                          const isTarget = colorTarget?.subId === sub.id && colorTarget?.wordIdx === wIdx;
+                          return (
+                            <div key={wIdx} className="relative">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isTarget) {
+                                    setColorTarget(null);
+                                  } else {
+                                    setColorTarget({ subId: sub.id, wordIdx: wIdx });
+                                  }
+                                }}
+                                style={{
+                                  color: w.color || '#FFFFFF',
+                                  borderColor: w.color ? w.color : undefined,
+                                  backgroundColor: w.color ? `${w.color}25` : undefined,
+                                }}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold border transition flex items-center gap-1 ${
+                                  isTarget
+                                    ? 'ring-2 ring-blue-500 border-white'
+                                    : w.color
+                                    ? 'border-opacity-70 shadow-sm'
+                                    : 'bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300'
+                                }`}
+                              >
+                                <span>{w.word}</span>
+                                {w.color && (
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full"
+                                    style={{ backgroundColor: w.color }}
+                                  />
+                                )}
+                              </button>
+
+                              {/* Color Picker Popover */}
+                              {isTarget && (
+                                <div className="absolute left-0 bottom-full mb-1 z-50 p-2.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl space-y-2 w-52 text-[11px]">
+                                  <div className="flex justify-between items-center pb-1 border-b border-slate-800 font-semibold text-white">
+                                    <span className="truncate">"{w.word}"</span>
+                                    <button
+                                      onClick={() => setColorTarget(null)}
+                                      className="text-slate-400 hover:text-white"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                  {/* Preset viral swatches */}
+                                  <div className="grid grid-cols-4 gap-1.5">
+                                    {[
+                                      { name: 'Yellow', hex: '#FFE600' },
+                                      { name: 'Red', hex: '#EF4444' },
+                                      { name: 'Pink', hex: '#EC4899' },
+                                      { name: 'Cyan', hex: '#00F0FF' },
+                                      { name: 'Green', hex: '#22C55E' },
+                                      { name: 'Purple', hex: '#A855F7' },
+                                      { name: 'Orange', hex: '#F97316' },
+                                      { name: 'White', hex: '#FFFFFF' },
+                                    ].map((swatch) => (
+                                      <button
+                                        key={swatch.hex}
+                                        type="button"
+                                        onClick={() => {
+                                          updateProject((draft) => {
+                                            const s = draft.subtitles.find((item) => item.id === sub.id);
+                                            if (s) {
+                                              if (!s.words || s.words.length === 0) {
+                                                const tokens = s.text.trim().split(/\s+/).filter(Boolean);
+                                                const dur = s.end - s.start;
+                                                s.words = tokens.map((t, idx2) => ({
+                                                  word: t,
+                                                  start: s.start + (dur / tokens.length) * idx2,
+                                                  end: s.start + (dur / tokens.length) * (idx2 + 1),
+                                                }));
+                                              }
+                                              if (s.words[wIdx]) {
+                                                s.words[wIdx].color = swatch.hex;
+                                              }
+                                            }
+                                            return draft;
+                                          });
+                                          setColorTarget(null);
+                                        }}
+                                        style={{ backgroundColor: swatch.hex }}
+                                        title={swatch.name}
+                                        className="w-full h-6 rounded-md border border-white/20 hover:scale-110 transition shadow"
+                                      />
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-800">
+                                    <label className="text-slate-400">Custom:</label>
+                                    <input
+                                      type="color"
+                                      value={w.color || '#FFE600'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateProject((draft) => {
+                                          const s = draft.subtitles.find((item) => item.id === sub.id);
+                                          if (s) {
+                                            if (!s.words || s.words.length === 0) {
+                                              const tokens = s.text.trim().split(/\s+/).filter(Boolean);
+                                              const dur = s.end - s.start;
+                                              s.words = tokens.map((t, idx2) => ({
+                                                word: t,
+                                                start: s.start + (dur / tokens.length) * idx2,
+                                                end: s.start + (dur / tokens.length) * (idx2 + 1),
+                                              }));
+                                            }
+                                            if (s.words[wIdx]) {
+                                              s.words[wIdx].color = val;
+                                            }
+                                          }
+                                          return draft;
+                                        });
+                                      }}
+                                      className="w-6 h-6 rounded border-0 bg-transparent cursor-pointer"
+                                    />
+                                    {w.color && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          updateProject((draft) => {
+                                            const s = draft.subtitles.find((item) => item.id === sub.id);
+                                            if (s && s.words && s.words[wIdx]) {
+                                              delete s.words[wIdx].color;
+                                            }
+                                            return draft;
+                                          });
+                                          setColorTarget(null);
+                                        }}
+                                        className="text-rose-400 hover:text-rose-300 text-[10px]"
+                                      >
+                                        Reset
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 );
               })
@@ -493,16 +656,25 @@ export default function SubtitleEditor() {
                 }}
                 className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
               >
-                <option value="karaoke_highlight">Karaoke Active Word Highlight</option>
-                <option value="pop_in">Pop-In Bounce</option>
+                <option value="karaoke_highlight">⚡ Karaoke Active Word Highlight (Viral)</option>
+                <option value="pop_in">💥 Pop-In Bounce (TikTok / Shorts)</option>
+                <option value="bounce_word">🌊 Word Bouncing Wave</option>
+                <option value="neon_glow">✨ Neon Glowing Aura</option>
                 <option value="fade">Smooth Fade</option>
                 <option value="none">Static (None)</option>
               </select>
             </div>
 
-            {/* Vertical Position */}
-            <div className="space-y-1 pt-1">
-              <label className="text-slate-400 text-[11px]">Screen Position</label>
+            {/* Screen Position Section */}
+            <div className="space-y-2.5 pt-1 border-t border-slate-800/80">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-400 text-[11px] font-medium">Positioning & Alignment</label>
+                <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+                  Interactive Drag Enabled
+                </span>
+              </div>
+
+              {/* Base Position presets */}
               <div className="grid grid-cols-3 gap-1">
                 {(['top', 'middle', 'bottom'] as const).map((pos) => (
                   <button
@@ -510,18 +682,132 @@ export default function SubtitleEditor() {
                     onClick={() => {
                       updateProject((draft) => {
                         draft.subtitleStyle.position = pos;
+                        draft.subtitleStyle.verticalOffset = 0;
                         return draft;
                       });
                     }}
                     className={`py-1.5 rounded-lg text-center capitalize font-medium transition ${
                       project.subtitleStyle.position === pos
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-950 text-slate-400'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'bg-slate-950 text-slate-400 hover:text-white'
                     }`}
                   >
                     {pos}
                   </button>
                 ))}
+              </div>
+
+              {/* Horizontal Pan (X Offset) */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[11px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Horizontal Pan (X)</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateProject((draft) => {
+                          draft.subtitleStyle.horizontalOffset = 0;
+                          return draft;
+                        });
+                      }}
+                      className="text-[9px] px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-blue-400"
+                    >
+                      Center X
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      step="5"
+                      min="-200"
+                      max="200"
+                      value={project.subtitleStyle.horizontalOffset || 0}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 0;
+                        updateProject((draft) => {
+                          draft.subtitleStyle.horizontalOffset = val;
+                          return draft;
+                        });
+                      }}
+                      className="w-12 px-1 py-0.5 bg-slate-950 border border-slate-700 rounded text-right font-mono text-white text-[11px] outline-none"
+                    />
+                    <span className="text-slate-400 font-mono">px</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="-150"
+                  max="150"
+                  step="2"
+                  value={project.subtitleStyle.horizontalOffset || 0}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    updateProject((draft) => {
+                      draft.subtitleStyle.horizontalOffset = val;
+                      return draft;
+                    });
+                  }}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
+
+              {/* Vertical Pan (Y Offset) */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[11px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Vertical Offset (Y)</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateProject((draft) => {
+                          draft.subtitleStyle.verticalOffset = 0;
+                          return draft;
+                        });
+                      }}
+                      className="text-[9px] px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-blue-400"
+                    >
+                      Reset Y
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      step="5"
+                      min="-250"
+                      max="250"
+                      value={project.subtitleStyle.verticalOffset || 0}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 0;
+                        updateProject((draft) => {
+                          draft.subtitleStyle.verticalOffset = val;
+                          return draft;
+                        });
+                      }}
+                      className="w-12 px-1 py-0.5 bg-slate-950 border border-slate-700 rounded text-right font-mono text-white text-[11px] outline-none"
+                    />
+                    <span className="text-slate-400 font-mono">px</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="-200"
+                  max="200"
+                  step="2"
+                  value={project.subtitleStyle.verticalOffset || 0}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    updateProject((draft) => {
+                      draft.subtitleStyle.verticalOffset = val;
+                      return draft;
+                    });
+                  }}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+              </div>
+
+              {/* Direct drag hint */}
+              <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-300 leading-snug">
+                💡 Drag Directly: You can click and drag the subtitle text right on the preview window to position it anywhere!
               </div>
             </div>
           </div>

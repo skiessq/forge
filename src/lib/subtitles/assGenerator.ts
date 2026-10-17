@@ -44,6 +44,19 @@ export function generateAssSubtitles(project: Project): string {
   // Alignment: 2 = Bottom-center, 5 = Middle-center, 8 = Top-center
   let alignment = 2;
   let marginV = 220; // default bottom margin for vertical shorts
+  let marginL = 60;
+  let marginR = 60;
+
+  if (subtitleStyle.horizontalOffset) {
+    const hOff = subtitleStyle.horizontalOffset;
+    if (hOff > 0) {
+      marginL = Math.round(60 + hOff * 2);
+      marginR = Math.max(10, Math.round(60 - hOff * 2));
+    } else {
+      marginR = Math.round(60 + Math.abs(hOff) * 2);
+      marginL = Math.max(10, Math.round(60 - Math.abs(hOff) * 2));
+    }
+  }
 
   if (subtitleStyle.position === 'top') {
     alignment = 8;
@@ -69,7 +82,7 @@ PlayResY: ${canvas.height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},${primaryColor},${highlightColor},${outlineColor},${shadowColor},-1,0,0,0,100,100,0,0,1,${outlineWidth},${shadowDistance},${alignment},60,60,${marginV},1
+Style: Default,${fontName},${fontSize},${primaryColor},${highlightColor},${outlineColor},${shadowColor},-1,0,0,0,100,100,0,0,1,${outlineWidth},${shadowDistance},${alignment},${marginL},${marginR},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -85,21 +98,27 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if (transform === 'uppercase') baseText = baseText.toUpperCase();
     if (transform === 'lowercase') baseText = baseText.toLowerCase();
 
-    // Karaoke active word animation
+    // Karaoke active word animation with individual word color support
     if (subtitleStyle.animation === 'karaoke_highlight' && item.words && item.words.length > 0) {
       for (let i = 0; i < item.words.length; i++) {
         const currentWord = item.words[i];
         const wordStart = secondsToAssTime(currentWord.start);
         const wordEnd = secondsToAssTime(currentWord.end);
 
-        // Build line where word i is highlighted
+        // Build line where word i is highlighted and individual word colors are respected
         const lineParts = item.words.map((w, idx) => {
           let wordStr = w.word;
           if (transform === 'uppercase') wordStr = wordStr.toUpperCase();
           if (transform === 'lowercase') wordStr = wordStr.toLowerCase();
 
+          const customColor = w.color ? hexToAssColor(w.color) : null;
+
           if (idx === i) {
-            return `{\\c${highlightColor}\\fscx108\\fscy108}${wordStr}{\\c${primaryColor}\\fscx100\\fscy100}`;
+            const activeColor = customColor || highlightColor;
+            return `{\\c${activeColor}\\fscx110\\fscy110}${wordStr}{\\c${primaryColor}\\fscx100\\fscy100}`;
+          }
+          if (customColor) {
+            return `{\\c${customColor}}${wordStr}{\\c${primaryColor}}`;
           }
           return wordStr;
         });
@@ -109,21 +128,42 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
           `Dialogue: 0,${wordStart},${wordEnd},Default,,0,0,0,,${lineText}`
         );
       }
-    } else if (subtitleStyle.animation === 'pop_in') {
-      const start = secondsToAssTime(item.start);
-      const end = secondsToAssTime(item.end);
-      const popText = `{\\t(0,100,\\fscx110\\fscy110)\\t(100,200,\\fscx100\\fscy100)}${baseText}`;
-      dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${popText}`);
-    } else if (subtitleStyle.animation === 'fade') {
-      const start = secondsToAssTime(item.start);
-      const end = secondsToAssTime(item.end);
-      const fadeText = `{\\fad(150,150)}${baseText}`;
-      dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${fadeText}`);
     } else {
-      // Standard / none
+      // Build base text with any custom individual word colors preserved
+      let styledText = baseText;
+      if (item.words && item.words.length > 0) {
+        styledText = item.words
+          .map((w) => {
+            let wordStr = w.word;
+            if (transform === 'uppercase') wordStr = wordStr.toUpperCase();
+            if (transform === 'lowercase') wordStr = wordStr.toLowerCase();
+            if (w.color) {
+              return `{\\c${hexToAssColor(w.color)}}${wordStr}{\\c${primaryColor}}`;
+            }
+            return wordStr;
+          })
+          .join(' ');
+      }
+
       const start = secondsToAssTime(item.start);
       const end = secondsToAssTime(item.end);
-      dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${baseText}`);
+
+      if (subtitleStyle.animation === 'pop_in') {
+        const popText = `{\\t(0,100,\\fscx112\\fscy112)\\t(100,200,\\fscx100\\fscy100)}${styledText}`;
+        dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${popText}`);
+      } else if (subtitleStyle.animation === 'bounce_word') {
+        const bounceText = `{\\t(0,120,\\fscy118)\\t(120,240,\\fscy100)}${styledText}`;
+        dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${bounceText}`);
+      } else if (subtitleStyle.animation === 'neon_glow') {
+        const glowText = `{\\bord6\\shad5}${styledText}`;
+        dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${glowText}`);
+      } else if (subtitleStyle.animation === 'fade') {
+        const fadeText = `{\\fad(150,150)}${styledText}`;
+        dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${fadeText}`);
+      } else {
+        // Standard / none
+        dialogueLines.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,${styledText}`);
+      }
     }
   }
 
