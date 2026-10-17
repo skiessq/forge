@@ -6,6 +6,7 @@ import DependencyBanner from '@/components/dashboard/DependencyBanner';
 import NewProjectModal from '@/components/dashboard/NewProjectModal';
 import BatchExportModal from '@/components/dashboard/BatchExportModal';
 import ProjectCard from '@/components/dashboard/ProjectCard';
+import AutoHighlightModal from '@/components/highlight/AutoHighlightModal';
 import { Plus, Scissors, Sparkles, FolderOpen, ShieldAlert, Layers } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -13,6 +14,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
+  const [isHighlightOpen, setIsHighlightOpen] = useState(false);
+  const [selectedHighlightProject, setSelectedHighlightProject] = useState<Project | null>(null);
 
   const fetchProjects = async () => {
     try {
@@ -58,6 +61,19 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            {projects.length > 0 && (
+              <button
+                onClick={() => {
+                  setSelectedHighlightProject(projects[0]);
+                  setIsHighlightOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500/15 to-indigo-600/15 hover:from-amber-500/25 hover:to-indigo-600/25 border border-amber-500/30 text-amber-300 font-medium text-xs rounded-xl transition shadow-md shadow-amber-500/10"
+              >
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Auto-Highlight</span>
+              </button>
+            )}
+
             {projects.length > 1 && (
               <button
                 onClick={() => setIsBatchOpen(true)}
@@ -151,7 +167,15 @@ export default function DashboardPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {projects.map((p) => (
-                <ProjectCard key={p.id} project={p} onDeleted={fetchProjects} />
+                <ProjectCard
+                  key={p.id}
+                  project={p}
+                  onDeleted={fetchProjects}
+                  onAutoHighlight={(proj) => {
+                    setSelectedHighlightProject(proj);
+                    setIsHighlightOpen(true);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -182,6 +206,18 @@ export default function DashboardPage() {
         onClose={() => setIsBatchOpen(false)}
         projects={projects}
       />
+
+      {/* Modal for Auto-Highlight AI Analysis */}
+      {selectedHighlightProject && (
+        <AutoHighlightModal
+          isOpen={isHighlightOpen}
+          onClose={() => setIsHighlightOpen(false)}
+          projectId={selectedHighlightProject.id}
+          sourcePath={selectedHighlightProject.source.path}
+          sourceDuration={selectedHighlightProject.source.probe.duration}
+          onProjectsCreated={() => fetchProjects()}
+        />
+      )}
     </div>
   );
 }

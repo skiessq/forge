@@ -18,23 +18,41 @@ def transcribe(audio_path, language=None, model_size="base"):
             print(f"CUDA check notice: {e}, falling back to CPU", file=sys.stderr)
 
         print(f"Loading faster-whisper model '{model_size}' on {device} ({compute_type})...", file=sys.stderr)
-        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        try:
+            model = WhisperModel(model_size, device=device, compute_type=compute_type)
+            print(f"Transcribing '{audio_path}' (language={language or 'auto'})...", file=sys.stderr)
+            segments, info = model.transcribe(
+                audio_path,
+                language=language if language and language != "auto" else None,
+                word_timestamps=True,
+                vad_filter=True,
+            )
+            detected_language = info.language
+            segments_list = list(segments)
+        except Exception as runtime_err:
+            if device == "cuda":
+                print(f"CUDA runtime notice ({runtime_err}), falling back to CPU int8...", file=sys.stderr)
+                device = "cpu"
+                compute_type = "int8"
+                model = WhisperModel(model_size, device="cpu", compute_type="int8")
+                print(f"Transcribing '{audio_path}' on CPU (language={language or 'auto'})...", file=sys.stderr)
+                segments, info = model.transcribe(
+                    audio_path,
+                    language=language if language and language != "auto" else None,
+                    word_timestamps=True,
+                    vad_filter=True,
+                )
+                detected_language = info.language
+                segments_list = list(segments)
+            else:
+                raise runtime_err
 
-        print(f"Transcribing '{audio_path}' (language={language or 'auto'})...", file=sys.stderr)
-        segments, info = model.transcribe(
-            audio_path,
-            language=language if language and language != "auto" else None,
-            word_timestamps=True,
-            vad_filter=True,
-        )
-
-        detected_language = info.language
         print(f"Detected language: {detected_language} (prob: {info.language_probability:.2f})", file=sys.stderr)
 
         results = []
         seg_idx = 1
 
-        for segment in segments:
+        for segment in segments_list:
             words = []
             if segment.words:
                 for w in segment.words:

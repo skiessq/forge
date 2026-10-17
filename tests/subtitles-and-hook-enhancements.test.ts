@@ -5,7 +5,7 @@ import { buildFFmpegExportCommand } from '../src/lib/ffmpeg/builder';
 import { Project, SubtitleItem, SubtitleStyle, IntroHookConfig } from '../src/lib/types';
 
 test('ASS generator outputs custom word color tags when specified', () => {
-  const mockProject: Project = {
+  const mockProject: any = {
     id: 'test_custom_colors',
     name: 'Custom Colors Test',
     createdAt: new Date().toISOString(),
@@ -86,7 +86,7 @@ test('ASS generator outputs custom word color tags when specified', () => {
 });
 
 test('FFmpeg builder includes intro hook with custom positioning, transition, and viral font', () => {
-  const mockProject: Project = {
+  const mockProject: any = {
     id: 'test_hook',
     name: 'Hook Test',
     createdAt: new Date().toISOString(),

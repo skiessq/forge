@@ -21,6 +21,7 @@ import { ProjectTemplate } from '@/lib/storage/templates';
 import SilenceRemovalModal from './SilenceRemovalModal';
 import SubtitleEditor from './SubtitleEditor';
 import AutoSplitModal from './AutoSplitModal';
+import AutoHighlightModal from '@/components/highlight/AutoHighlightModal';
 import { Bookmark, FolderDown, PlusCircle } from 'lucide-react';
 
 export default function LeftSidebar() {
@@ -28,6 +29,7 @@ export default function LeftSidebar() {
   const [activeTab, setActiveTab] = useState<'layout' | 'media' | 'subtitles' | 'audio' | 'effects' | 'presets'>('layout');
   const [isSilenceModalOpen, setIsSilenceModalOpen] = useState(false);
   const [isAutoSplitOpen, setIsAutoSplitOpen] = useState(false);
+  const [isAutoHighlightOpen, setIsAutoHighlightOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<ProjectTemplate[]>([]);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
@@ -875,21 +877,44 @@ export default function LeftSidebar() {
         {/* TAB 5: PRESETS & REUSABLE TEMPLATES */}
         {activeTab === 'presets' && (
           <div className="space-y-5">
+            {/* AI Auto-Highlight Viral Moments (NEW) */}
+            <div className="p-4 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/20 border border-amber-500/30 rounded-2xl space-y-2.5 shadow-lg shadow-amber-500/5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span className="font-bold text-white text-xs">Auto-Highlight AI</span>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30 tracking-wider">
+                  VIRAL PIPELINE
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-snug">
+                Extract the 10-20 highest performing clips in this video using audio energy spikes, sentence windows, and LLM scoring.
+              </p>
+              <button
+                onClick={() => setIsAutoHighlightOpen(true)}
+                className="w-full py-2.5 bg-gradient-to-r from-amber-500 via-indigo-600 to-blue-600 hover:from-amber-400 hover:to-blue-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Launch Auto-Highlight Studio</span>
+              </button>
+            </div>
+
             {/* AI Auto-Split Long Clip */}
             <div className="p-3.5 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-2.5">
               <div className="flex items-center gap-2">
                 <Scissors className="w-4 h-4 text-blue-400 -rotate-45" />
-                <span className="font-bold text-white text-xs">AI Auto-Split Long Clip</span>
+                <span className="font-bold text-white text-xs">Pacing Auto-Split</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-snug">
-                Detect natural pacing and subtitle clusters in this video to automatically carve out multiple short-form segments.
+                Segment clip based on transcript sentence clusters and pacing.
               </p>
               <button
                 onClick={() => setIsAutoSplitOpen(true)}
-                className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition"
+                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition"
               >
                 <Scissors className="w-3.5 h-3.5 -rotate-45" />
-                <span>Launch Auto-Split Assistant</span>
+                <span>Basic Auto-Split</span>
               </button>
             </div>
 
@@ -976,6 +1001,15 @@ export default function LeftSidebar() {
       <AutoSplitModal
         isOpen={isAutoSplitOpen}
         onClose={() => setIsAutoSplitOpen(false)}
+      />
+
+      {/* Auto-Highlight Studio Modal */}
+      <AutoHighlightModal
+        isOpen={isAutoHighlightOpen}
+        onClose={() => setIsAutoHighlightOpen(false)}
+        projectId={project.id}
+        sourcePath={project.source.path}
+        sourceDuration={project.source.probe?.duration}
       />
     </aside>
   );

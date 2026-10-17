@@ -58,7 +58,7 @@ export function buildFFmpegExportCommand(
   }
 
   // Check if timeline video track has trims or splits
-  const allTracks = project.tracks || project.timeline?.tracks || [];
+  const allTracks = project.tracks || (project as any).timeline?.tracks || [];
   const videoTrack = allTracks.find((t) => t.type === 'video');
   const clips = videoTrack?.clips || [];
   let baseVideoInputNode = '[0:v]';

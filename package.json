@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "npx tsx --test tests/**/*.test.*"
+    "test": "npx tsx --test tests/**/*.test.*",
+    "highlight": "npx tsx scripts/run_highlight_cli.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

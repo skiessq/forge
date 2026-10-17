@@ -18,14 +18,16 @@ import {
   Scissors,
   PanelBottomClose,
   PanelBottomOpen,
+  Sparkles,
 } from 'lucide-react';
 import { AspectRatio } from '@/lib/types';
 
 interface Props {
   onOpenExport: () => void;
+  onOpenAutoHighlight?: () => void;
 }
 
-export default function TopNav({ onOpenExport }: Props) {
+export default function TopNav({ onOpenExport, onOpenAutoHighlight }: Props) {
   const {
     project,
     updateProject,
@@ -185,6 +187,18 @@ export default function TopNav({ onOpenExport }: Props) {
             </span>
           ) : null}
         </div>
+
+        {/* Auto-Highlight Button */}
+        {onOpenAutoHighlight && (
+          <button
+            onClick={onOpenAutoHighlight}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500/15 to-indigo-600/15 hover:from-amber-500/25 hover:to-indigo-600/25 border border-amber-500/30 text-amber-300 font-semibold text-xs rounded-xl shadow-md transition"
+            title="Auto-Highlight best viral moments"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Auto-Highlight</span>
+          </button>
+        )}
 
         {/* Export Button */}
         <button

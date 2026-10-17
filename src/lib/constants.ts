@@ -144,7 +144,7 @@ export const SUBTITLE_PRESETS: Record<string, SubtitleStyle> = {
     lineSpacing: 1.2,
     animation: 'fade',
   },
-  neon_cyber: {
+  cyber_purple: {
     fontFamily: 'Montserrat',
     fontSize: 52,
     primaryColor: '#E0E7FF',

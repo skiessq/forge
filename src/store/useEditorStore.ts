@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Project, AspectRatio, LayoutTemplateId, CropRect } from '@/lib/types';
+import { Project, AspectRatio, LayoutTemplateId, CropRect, SubtitleStyle, IntroHookConfig } from '@/lib/types';
 import { CANVAS_PRESETS, getLayoutTemplate } from '@/lib/constants';
 
 interface EditorState {

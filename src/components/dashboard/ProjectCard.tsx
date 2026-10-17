@@ -8,9 +8,10 @@ import { Film, Clock, Trash2, ArrowRight, Layers, Volume2 } from 'lucide-react';
 interface Props {
   project: Project;
   onDeleted: () => void;
+  onAutoHighlight?: (project: Project) => void;
 }
 
-export default function ProjectCard({ project, onDeleted }: Props) {
+export default function ProjectCard({ project, onDeleted, onAutoHighlight }: Props) {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const durationSec = Math.round(project.source.probe?.duration || 0);
@@ -84,15 +85,32 @@ export default function ProjectCard({ project, onDeleted }: Props) {
       </div>
 
       {/* Card Footer Actions */}
-      <div className="px-5 py-3.5 bg-slate-950/40 border-t border-slate-800/80 flex items-center justify-between">
-        <button
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-          title="Delete project"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+      <div className="px-5 py-3.5 bg-slate-950/40 border-t border-slate-800/80 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+            title="Delete project"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+
+          {onAutoHighlight && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onAutoHighlight(project);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg border border-amber-500/20 transition"
+              title="Find viral shorts with Auto-Highlight AI"
+            >
+              <span className="text-[11px]">✨</span>
+              <span>Highlight</span>
+            </button>
+          )}
+        </div>
 
         <Link
           href={`/editor/${project.id}`}

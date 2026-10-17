@@ -9,6 +9,7 @@ import PreviewPlayer from '@/components/editor/PreviewPlayer';
 import RightProperties from '@/components/editor/RightProperties';
 import Timeline from '@/components/editor/Timeline';
 import ExportModal from '@/components/editor/ExportModal';
+import AutoHighlightModal from '@/components/highlight/AutoHighlightModal';
 import { Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,6 +22,7 @@ export default function EditorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isAutoHighlightOpen, setIsAutoHighlightOpen] = useState(false);
 
   // Keyboard shortcut: 't' toggles timeline visibility
   useEffect(() => {
@@ -121,7 +123,10 @@ export default function EditorPage() {
   return (
     <div className="h-screen flex flex-col bg-[#080B10] text-slate-100 overflow-hidden">
       {/* Top Navigation */}
-      <TopNav onOpenExport={() => setIsExportOpen(true)} />
+      <TopNav
+        onOpenExport={() => setIsExportOpen(true)}
+        onOpenAutoHighlight={() => setIsAutoHighlightOpen(true)}
+      />
 
       {/* Main Studio Body (3 columns: Left Sidebar, Preview Player, Right Properties) */}
       <div className="flex-1 flex overflow-hidden">
@@ -135,6 +140,20 @@ export default function EditorPage() {
 
       {/* Export MP4 Dialog */}
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
+
+      {/* Auto-Highlight AI Studio Dialog */}
+      <AutoHighlightModal
+        isOpen={isAutoHighlightOpen}
+        onClose={() => setIsAutoHighlightOpen(false)}
+        projectId={project.id}
+        sourcePath={project.source.path}
+        sourceDuration={project.source.probe?.duration}
+        onProjectsCreated={(newIds) => {
+          if (newIds && newIds.length > 0) {
+            router.push(`/editor/${newIds[0]}`);
+          }
+        }}
+      />
     </div>
   );
 }

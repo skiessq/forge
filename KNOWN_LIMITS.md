@@ -27,3 +27,15 @@ In accordance with ClipForge's zero-placeholder policy, this document outlines k
 ### 5. Windows Filesystem Constraints
 - **Drive Letter Colons in FFmpeg Filtergraphs**: On Windows, drive letters (e.g., `C:\`) inside FFmpeg filtergraph strings must have their colons escaped (`C\:/...`) to avoid collision with filter option delimiters. ClipForge automatically sanitizes and normalizes all paths passed to `subtitles='...'` and `movie='...'`.
 - **MAX_PATH (260 Characters)**: Projects are stored under `.workspace/<projectId>/`. Avoid deeply nested directory structures on Windows systems where long paths are disabled in the registry.
+
+### 6. Auto-Highlight & LLM Scoring Constraints
+- **Local Ollama Integration**:
+  - Running the local AI scoring engine requires [Ollama](https://ollama.com/) running on `http://127.0.0.1:11434` with an installed model (e.g., `ollama pull llama3.2`).
+  - If Ollama is not installed or the daemon is inactive, ClipForge automatically detects the connection state and gracefully falls back to deterministic rule-based virality scoring, preventing runtime crashes.
+- **CUDA Runtime DLLs**:
+  - NVIDIA RTX GPUs (such as RTX 5050/4060/3060) accelerate `faster-whisper` transcription. If dynamic CUDA runtime DLLs (e.g. `cublas64_12.dll`) are missing from the environment, the transcription engine automatically catches the error and executes seamless fallback to high-speed CPU `int8` quantization.
+- **Human-in-the-Loop Review**:
+  - In strict compliance with zero-unauthorized-action policy, Auto-Highlight never auto-publishes or auto-approves clips. Every highlight candidate must be approved by the user before being dispatched to the editor.
+- **Zero-Speech Segments**:
+  - Videos with prolonged periods of dead air or music only are automatically detected and omitted by Stage 3 pre-filtering. Short videos (<5 min) automatically adapt minimum window constraints and reduce candidate counts proportionally.
+

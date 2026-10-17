@@ -17,7 +17,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { SUBTITLE_PRESETS, BUILT_IN_FONTS } from '@/lib/constants';
-import { SubtitleItem, SubtitleAnimation, JobProgress } from '@/lib/types';
+import { SubtitleItem, SubtitleAnimation, JobProgress, SubtitleWord } from '@/lib/types';
 import { exportToSrt, parseSrt, generateAssSubtitles } from '@/lib/subtitles/assGenerator';
 
 export default function SubtitleEditor() {
@@ -346,7 +346,7 @@ export default function SubtitleEditor() {
                       <div className="flex flex-wrap gap-1">
                         {(sub.words && sub.words.length > 0
                           ? sub.words
-                          : sub.text.trim().split(/\s+/).filter(Boolean).map((w, wIdx) => ({
+                          : sub.text.trim().split(/\s+/).filter(Boolean).map((w, wIdx): SubtitleWord => ({
                               word: w,
                               start: sub.start + ((sub.end - sub.start) / Math.max(1, sub.text.trim().split(/\s+/).length)) * wIdx,
                               end: sub.start + ((sub.end - sub.start) / Math.max(1, sub.text.trim().split(/\s+/).length)) * (wIdx + 1),
