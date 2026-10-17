@@ -11,12 +11,15 @@ import {
   Image as ImageIcon,
   Sliders,
   Check,
+  Scissors,
 } from 'lucide-react';
 import { LayoutTemplateId } from '@/lib/types';
+import SilenceRemovalModal from './SilenceRemovalModal';
 
 export default function LeftSidebar() {
   const { project, setLayoutTemplate, setSplitRatio, updateProject } = useEditorStore();
   const [activeTab, setActiveTab] = useState<'layout' | 'media' | 'subtitles' | 'audio' | 'effects'>('layout');
+  const [isSilenceModalOpen, setIsSilenceModalOpen] = useState(false);
 
   if (!project) return null;
 
@@ -231,19 +234,137 @@ export default function LeftSidebar() {
           </div>
         )}
 
-        {/* TAB 3: AUDIO RULES (Will be expanded in Phase 3) */}
+        {/* TAB 3: AUDIO RULES */}
         {activeTab === 'audio' && (
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2 text-slate-300">
-              <span className="font-semibold text-white">Audio Integrity Rules</span>
-              <p className="text-[11px] text-slate-400 leading-snug">
-                By default, the original audio stream is kept 100% untouched. No silent cuts, no mute, no auto-noise removal.
-              </p>
-              <div className="pt-2">
-                <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono">
-                  Default: Original Audio Untouched
+            {/* Original Audio Guaranteed Untouched */}
+            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  Original Audio Stream
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                  Bitstream Copy
                 </span>
               </div>
+              <p className="text-[11px] text-slate-300 leading-snug">
+                Voice and game sounds are kept exactly as recorded by default. No silent cuts, no mute, no unwanted denoising.
+              </p>
+            </div>
+
+            {/* Source Audio Track Selection */}
+            {project.source.probe?.audioTracks && project.source.probe.audioTracks.length > 1 && (
+              <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2">
+                <label className="font-semibold text-slate-200 block">Select Audio Track</label>
+                <select
+                  value={project.audioSettings.sourceAudioTrackIndex}
+                  onChange={(e) => {
+                    updateProject((draft) => {
+                      draft.audioSettings.sourceAudioTrackIndex = parseInt(e.target.value, 10);
+                      return draft;
+                    });
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white outline-none"
+                >
+                  {project.source.probe.audioTracks.map((tr) => (
+                    <option key={tr.index} value={tr.index}>
+                      Track {tr.index + 1}: {tr.title || tr.codec} ({tr.channels}ch)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Optional Toggles (OFF by default) */}
+            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
+              <span className="font-bold text-slate-300 uppercase tracking-wider text-[10px]">
+                Optional Audio Processing
+              </span>
+
+              {/* Loudness Normalization */}
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="text-white font-medium block">Normalize Loudness</span>
+                  <span className="text-[11px] text-slate-400">EBU R128 broadcast standard</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={project.audioSettings.normalizeLoudness}
+                  onChange={(e) => {
+                    updateProject((draft) => {
+                      draft.audioSettings.normalizeLoudness = e.target.checked;
+                      return draft;
+                    });
+                  }}
+                  className="rounded border-slate-700 bg-slate-950 text-blue-500 focus:ring-0 w-4 h-4"
+                />
+              </label>
+
+              {/* Auto Ducking */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <span className="text-white font-medium block">Game Audio Ducking</span>
+                    <span className="text-[11px] text-slate-400">Lower game volume during speech</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={project.audioSettings.duckGameAudio}
+                    onChange={(e) => {
+                      updateProject((draft) => {
+                        draft.audioSettings.duckGameAudio = e.target.checked;
+                        return draft;
+                      });
+                    }}
+                    className="rounded border-slate-700 bg-slate-950 text-blue-500 focus:ring-0 w-4 h-4"
+                  />
+                </label>
+              </div>
+
+              {/* Background Music Track */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-white font-medium block">Background Music Track</span>
+                    <span className="text-[11px] text-slate-400">Mix background song</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1 pt-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-400">Music Volume</span>
+                    <span className="font-mono text-white">
+                      {Math.round((project.audioSettings.backgroundMusicVolume ?? 0.25) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.05"
+                    max="1.0"
+                    step="0.05"
+                    value={project.audioSettings.backgroundMusicVolume ?? 0.25}
+                    onChange={(e) => {
+                      updateProject((draft) => {
+                        draft.audioSettings.backgroundMusicVolume = parseFloat(e.target.value);
+                        return draft;
+                      });
+                    }}
+                    className="w-full h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Silence Remover Tool Button */}
+            <div className="pt-2">
+              <button
+                onClick={() => setIsSilenceModalOpen(true)}
+                className="w-full py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 font-medium rounded-xl transition flex items-center justify-center gap-2"
+              >
+                <Scissors className="w-3.5 h-3.5 text-rose-400 -rotate-45" />
+                <span>Remove Silences Tool (Preview First)</span>
+              </button>
             </div>
           </div>
         )}
@@ -260,6 +381,12 @@ export default function LeftSidebar() {
           </div>
         )}
       </div>
+
+      {/* Silence Removal & Preview Modal */}
+      <SilenceRemovalModal
+        isOpen={isSilenceModalOpen}
+        onClose={() => setIsSilenceModalOpen(false)}
+      />
     </aside>
   );
 }

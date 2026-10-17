@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs';
 import { Project, ExportSettings, LayoutRegion } from '../types';
 
 export interface FFmpegCommandPlan {
@@ -239,22 +240,78 @@ export function buildFFmpegExportCommand(
     encoderArgs.push('-preset', preset, '-crf', '19');
   }
 
+  // Audio processing pipeline
+  const audioFilters: string[] = [];
+  const audioSettings = project.audioSettings || {
+    keepOriginalAudio: true,
+    sourceAudioTrackIndex: 0,
+    normalizeLoudness: false,
+    duckGameAudio: false,
+    backgroundMusicVolume: 0.25,
+  };
+
+  const audioTrackIdx = audioSettings.sourceAudioTrackIndex || 0;
+  let audioInputMap = `0:a:${audioTrackIdx}?`;
+  let finalAudioStream = `[a_out]`;
+  let audioCodec = 'copy';
+  let audioCodecArgs: string[] = [];
+
+  // Check if any audio filtering is requested
+  const hasBgMusic = Boolean(audioSettings.backgroundMusicPath && fs.existsSync(audioSettings.backgroundMusicPath));
+  const hasLoudnorm = Boolean(audioSettings.normalizeLoudness);
+  const hasDucking = Boolean(audioSettings.duckGameAudio);
+
+  let bgMusicInputIdx = -1;
+  if (hasBgMusic && audioSettings.backgroundMusicPath) {
+    bgMusicInputIdx = inputs.length / 2; // current count of inputs
+    inputs.push('-stream_loop', '-1', '-i', audioSettings.backgroundMusicPath);
+  }
+
+  if (hasBgMusic || hasLoudnorm || hasDucking) {
+    audioCodec = 'aac';
+    audioCodecArgs = ['-b:a', '192k'];
+
+    let currentAudioNode = `[0:a:${audioTrackIdx}]`;
+
+    if (hasLoudnorm) {
+      filterChains.push(`${currentAudioNode}loudnorm=I=-16:TP=-1.5:LRA=11[a_norm]`);
+      currentAudioNode = `[a_norm]`;
+    }
+
+    if (hasBgMusic && bgMusicInputIdx >= 0) {
+      const bgVol = (audioSettings.backgroundMusicVolume ?? 0.25).toFixed(2);
+      filterChains.push(
+        `[${bgMusicInputIdx}:a]volume=${bgVol}[a_bg]`,
+        `${currentAudioNode}[a_bg]amix=inputs=2:duration=first:dropout_transition=2${finalAudioStream}`
+      );
+    } else {
+      filterChains.push(`${currentAudioNode}anull${finalAudioStream}`);
+    }
+  }
+
   // Final arguments assemble
   const args: string[] = [
     '-y',
     ...inputs,
     '-filter_complex', filterChains.join(';'),
     '-map', finalVideoStream,
-    '-map', '0:a:0?', // Map first audio track if present
+  ];
+
+  if (hasBgMusic || hasLoudnorm || hasDucking) {
+    args.push('-map', finalAudioStream, '-c:a', audioCodec, ...audioCodecArgs);
+  } else {
+    // Default rule: Keep original audio untouched (bitstream copy when possible)
+    args.push('-map', audioInputMap, '-c:a', 'copy');
+  }
+
+  args.push(
     '-c:v', videoEncoder,
     ...encoderArgs,
     '-r', String(fps),
     '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac',
-    '-b:a', '192k',
     '-movflags', '+faststart',
-    outputPath,
-  ];
+    outputPath
+  );
 
   return {
     command: 'ffmpeg',
