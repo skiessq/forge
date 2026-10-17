@@ -4,13 +4,15 @@ import React, { useEffect, useState } from 'react';
 import { Project } from '@/lib/types';
 import DependencyBanner from '@/components/dashboard/DependencyBanner';
 import NewProjectModal from '@/components/dashboard/NewProjectModal';
+import BatchExportModal from '@/components/dashboard/BatchExportModal';
 import ProjectCard from '@/components/dashboard/ProjectCard';
-import { Plus, Scissors, Sparkles, FolderOpen, ShieldAlert } from 'lucide-react';
+import { Plus, Scissors, Sparkles, FolderOpen, ShieldAlert, Layers } from 'lucide-react';
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBatchOpen, setIsBatchOpen] = useState(false);
 
   const fetchProjects = async () => {
     try {
@@ -55,13 +57,25 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-xs rounded-xl transition shadow-lg shadow-blue-600/25 active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Short</span>
-          </button>
+          <div className="flex items-center gap-2.5">
+            {projects.length > 1 && (
+              <button
+                onClick={() => setIsBatchOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 font-medium text-xs rounded-xl transition"
+              >
+                <Layers className="w-4 h-4 text-indigo-400" />
+                <span>Batch Export ({projects.length})</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-xs rounded-xl transition shadow-lg shadow-blue-600/25 active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Short</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -160,6 +174,13 @@ export default function DashboardPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onCreated={fetchProjects}
+      />
+
+      {/* Modal for Batch Exporting Clips */}
+      <BatchExportModal
+        isOpen={isBatchOpen}
+        onClose={() => setIsBatchOpen(false)}
+        projects={projects}
       />
     </div>
   );

@@ -14,13 +14,59 @@ import {
   Scissors,
 } from 'lucide-react';
 import { LayoutTemplateId } from '@/lib/types';
+import { ProjectTemplate } from '@/lib/storage/templates';
 import SilenceRemovalModal from './SilenceRemovalModal';
 import SubtitleEditor from './SubtitleEditor';
+import AutoSplitModal from './AutoSplitModal';
+import { Bookmark, FolderDown, PlusCircle } from 'lucide-react';
 
 export default function LeftSidebar() {
   const { project, setLayoutTemplate, setSplitRatio, updateProject } = useEditorStore();
-  const [activeTab, setActiveTab] = useState<'layout' | 'media' | 'subtitles' | 'audio' | 'effects'>('layout');
+  const [activeTab, setActiveTab] = useState<'layout' | 'media' | 'subtitles' | 'audio' | 'effects' | 'presets'>('layout');
   const [isSilenceModalOpen, setIsSilenceModalOpen] = useState(false);
+  const [isAutoSplitOpen, setIsAutoSplitOpen] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState<ProjectTemplate[]>([]);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+  const handleSaveTemplate = async () => {
+    if (!newTemplateName.trim()) return;
+    setIsSavingTemplate(true);
+    try {
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTemplateName.trim(),
+          layout: project?.layout,
+          subtitleStyle: project?.subtitleStyle,
+          introHook: project?.introHook,
+          watermark: project?.watermark,
+          audioSettings: project?.audioSettings,
+        }),
+      });
+      const d = await res.json();
+      if (d.template) {
+        setSavedTemplates((prev) => [...prev.filter((t) => t.id !== d.template.id), d.template]);
+        setNewTemplateName('');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
+  const handleApplyTemplate = (tpl: ProjectTemplate) => {
+    updateProject((draft) => {
+      draft.layout = tpl.layout;
+      draft.subtitleStyle = tpl.subtitleStyle;
+      if (tpl.introHook) draft.introHook = tpl.introHook;
+      if (tpl.watermark) draft.watermark = tpl.watermark;
+      if (tpl.audioSettings) draft.audioSettings = tpl.audioSettings;
+      return draft;
+    });
+  };
 
   if (!project) return null;
 
@@ -109,6 +155,23 @@ export default function LeftSidebar() {
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>Effects</span>
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('presets');
+            fetch('/api/templates')
+              .then((r) => r.json())
+              .then((d) => setSavedTemplates(d.templates || []))
+              .catch(console.error);
+          }}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-t-lg font-medium transition ${
+            activeTab === 'presets'
+              ? 'bg-slate-900 text-blue-400 border-t-2 border-blue-500'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Bookmark className="w-3.5 h-3.5" />
+          <span>Templates</span>
         </button>
       </div>
 
@@ -533,12 +596,111 @@ export default function LeftSidebar() {
             </div>
           </div>
         )}
+
+        {/* TAB 5: PRESETS & REUSABLE TEMPLATES */}
+        {activeTab === 'presets' && (
+          <div className="space-y-5">
+            {/* AI Auto-Split Long Clip */}
+            <div className="p-3.5 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2">
+                <Scissors className="w-4 h-4 text-blue-400 -rotate-45" />
+                <span className="font-bold text-white text-xs">AI Auto-Split Long Clip</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Detect natural pacing and subtitle clusters in this video to automatically carve out multiple short-form segments.
+              </p>
+              <button
+                onClick={() => setIsAutoSplitOpen(true)}
+                className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition"
+              >
+                <Scissors className="w-3.5 h-3.5 -rotate-45" />
+                <span>Launch Auto-Split Assistant</span>
+              </button>
+            </div>
+
+            {/* Save Current as Template */}
+            <div className="p-3.5 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-3">
+              <div className="flex items-center gap-2">
+                <Bookmark className="w-4 h-4 text-blue-400" />
+                <span className="font-bold text-white text-xs">Save Current Template</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Save your current layout framing, subtitle typography, visual effects, and audio settings as a reusable template.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Template Name (e.g. Neon Facecam Top)"
+                  value={newTemplateName}
+                  onChange={(e) => setNewTemplateName(e.target.value)}
+                  className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={handleSaveTemplate}
+                  disabled={isSavingTemplate || !newTemplateName.trim()}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold rounded-xl text-xs flex items-center gap-1 transition"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Save</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Saved Templates List */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Saved Reusable Templates ({savedTemplates.length})
+              </span>
+
+              {savedTemplates.length === 0 ? (
+                <div className="p-4 border border-dashed border-slate-800 rounded-xl text-center text-[11px] text-slate-500">
+                  No saved templates yet. Name and save your first template above!
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {savedTemplates.map((tpl) => (
+                    <div
+                      key={tpl.id}
+                      className="p-3 bg-slate-900/70 border border-slate-800 rounded-xl space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-white text-xs">{tpl.name}</span>
+                        <button
+                          onClick={() => handleApplyTemplate(tpl)}
+                          className="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                        >
+                          <FolderDown className="w-3 h-3" />
+                          <span>Apply</span>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                        <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                          {tpl.layout?.templateId}
+                        </span>
+                        <span>•</span>
+                        <span className="text-slate-400">
+                          Font: {tpl.subtitleStyle?.fontFamily || 'Outfit'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Silence Removal & Preview Modal */}
       <SilenceRemovalModal
         isOpen={isSilenceModalOpen}
         onClose={() => setIsSilenceModalOpen(false)}
+      />
+
+      {/* Auto-Split Modal */}
+      <AutoSplitModal
+        isOpen={isAutoSplitOpen}
+        onClose={() => setIsAutoSplitOpen(false)}
       />
     </aside>
   );

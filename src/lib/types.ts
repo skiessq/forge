@@ -177,6 +177,22 @@ export interface ExportSettings {
   outputFileName: string;
 }
 
+export interface IntroHookConfig {
+  enabled: boolean;
+  text: string;
+  duration: number;
+  fontSize: number;
+  color: string;
+}
+
+export interface WatermarkConfig {
+  enabled: boolean;
+  imagePath?: string;
+  opacity: number;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  scale: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -196,20 +212,8 @@ export interface Project {
   subtitleStyle: SubtitleStyle;
   audioSettings: AudioSettings;
   transitions: TransitionConfig[];
-  introHook?: {
-    enabled: boolean;
-    text: string;
-    duration: number;
-    fontSize: number;
-    color: string;
-  };
-  watermark?: {
-    enabled: boolean;
-    imagePath?: string;
-    opacity: number;
-    position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-    scale: number;
-  };
+  introHook?: IntroHookConfig;
+  watermark?: WatermarkConfig;
   exportSettings: ExportSettings;
 }
 
