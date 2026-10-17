@@ -215,27 +215,56 @@ export default function LeftSidebar() {
               project.layout.templateId === 'split_gameplay_top' ||
               project.layout.templateId === 'media_top_game_bottom' ||
               project.layout.templateId === 'media_bottom_game_top') && (
-              <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2">
-                <div className="flex justify-between text-xs">
+              <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
+                <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-300 font-medium">Split Ratio</span>
-                  <span className="font-mono text-blue-400 font-bold">
-                    {Math.round((project.layout.splitRatio || 0.5) * 100)} /{' '}
-                    {100 - Math.round((project.layout.splitRatio || 0.5) * 100)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                      Unstretched
+                    </span>
+                    <span className="font-mono text-blue-400 font-bold">
+                      {Math.round((project.layout.splitRatio || 0.5) * 100)} /{' '}
+                      {100 - Math.round((project.layout.splitRatio || 0.5) * 100)}
+                    </span>
+                  </div>
                 </div>
+
                 <input
                   type="range"
-                  min="0.25"
-                  max="0.75"
-                  step="0.05"
+                  min="0.20"
+                  max="0.80"
+                  step="0.01"
                   value={project.layout.splitRatio || 0.5}
                   onChange={(e) => setSplitRatio(parseFloat(e.target.value))}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
-                <div className="flex justify-between text-[10px] text-slate-500">
-                  <span>30/70</span>
-                  <span>50/50</span>
-                  <span>70/30</span>
+
+                {/* Quick Split Ratio Presets */}
+                <div className="grid grid-cols-5 gap-1 pt-1">
+                  {[
+                    { label: '25/75', val: 0.25, title: '25% Cam / 75% Game' },
+                    { label: '33/67', val: 0.33, title: '1/3 Cam / 2/3 Game' },
+                    { label: '50/50', val: 0.50, title: 'Equal Half Split' },
+                    { label: '67/33', val: 0.67, title: '2/3 Game / 1/3 Cam' },
+                    { label: '75/25', val: 0.75, title: '75% Game / 25% Cam' },
+                  ].map((preset) => {
+                    const isSelected = Math.abs((project.layout.splitRatio || 0.5) - preset.val) < 0.02;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setSplitRatio(preset.val)}
+                        title={preset.title}
+                        className={`py-1 text-[10px] font-mono rounded border transition text-center ${
+                          isSelected
+                            ? 'bg-blue-600 border-blue-500 text-white font-bold'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -130,7 +130,24 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
         ],
       };
 
-    case 'split_facecam_top':
+    case 'split_facecam_top': {
+      const topAspect = 1080 / Math.max(1, 1920 * splitRatio);
+      const botAspect = 1080 / Math.max(1, 1920 * (1 - splitRatio));
+      const srcAspect = 1920 / 1080;
+
+      // Facecam: 35% width, height derived from topAspect
+      const camW = 0.35;
+      const camH = parseFloat(((camW * srcAspect) / topAspect).toFixed(3));
+
+      // Gameplay: fill height (1.0), width derived from botAspect
+      let gameH = 1.0;
+      let gameW = parseFloat(((gameH * botAspect) / srcAspect).toFixed(3));
+      if (gameW > 1.0) {
+        gameW = 1.0;
+        gameH = parseFloat(((gameW * srcAspect) / botAspect).toFixed(3));
+      }
+      const gameX = parseFloat(((1 - gameW) / 2).toFixed(3));
+
       return {
         templateId,
         splitRatio,
@@ -142,7 +159,7 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
             label: 'Facecam (Top)',
             sourceType: 'primary',
             targetBounds: { x: 0, y: 0, width: 1, height: splitRatio },
-            crop: { x: 0.7, y: 0.05, width: 0.28, height: 0.4 }, // top right facecam typical crop
+            crop: { x: 0.60, y: 0.05, width: camW, height: camH }, // top right facecam unstretched
             fit: 'cover',
           },
           {
@@ -150,13 +167,29 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
             label: 'Gameplay (Bottom)',
             sourceType: 'primary',
             targetBounds: { x: 0, y: splitRatio, width: 1, height: 1 - splitRatio },
-            crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            crop: { x: gameX, y: 0, width: gameW, height: gameH }, // centered gameplay unstretched
             fit: 'cover',
           },
         ],
       };
+    }
 
-    case 'split_gameplay_top':
+    case 'split_gameplay_top': {
+      const topAspect = 1080 / Math.max(1, 1920 * splitRatio);
+      const botAspect = 1080 / Math.max(1, 1920 * (1 - splitRatio));
+      const srcAspect = 1920 / 1080;
+
+      let gameH = 1.0;
+      let gameW = parseFloat(((gameH * topAspect) / srcAspect).toFixed(3));
+      if (gameW > 1.0) {
+        gameW = 1.0;
+        gameH = parseFloat(((gameW * srcAspect) / topAspect).toFixed(3));
+      }
+      const gameX = parseFloat(((1 - gameW) / 2).toFixed(3));
+
+      const camW = 0.35;
+      const camH = parseFloat(((camW * srcAspect) / botAspect).toFixed(3));
+
       return {
         templateId,
         splitRatio,
@@ -168,7 +201,7 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
             label: 'Gameplay (Top)',
             sourceType: 'primary',
             targetBounds: { x: 0, y: 0, width: 1, height: splitRatio },
-            crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            crop: { x: gameX, y: 0, width: gameW, height: gameH },
             fit: 'cover',
           },
           {
@@ -176,11 +209,12 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
             label: 'Facecam (Bottom)',
             sourceType: 'primary',
             targetBounds: { x: 0, y: splitRatio, width: 1, height: 1 - splitRatio },
-            crop: { x: 0.7, y: 0.05, width: 0.28, height: 0.4 },
+            crop: { x: 0.60, y: 0.05, width: camW, height: camH },
             fit: 'cover',
           },
         ],
       };
+    }
 
     case 'media_top_game_bottom':
       return {

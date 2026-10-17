@@ -103,8 +103,10 @@ export function buildFFmpegExportCommand(
     targetH: number,
     outputStream: string
   ): string {
+    const targetAspect = targetW / targetH;
     const cropW = makeEven(srcW * reg.crop.width);
-    const cropH = makeEven(srcH * reg.crop.height);
+    // Strictly lock source crop aspect ratio to target box to guarantee ZERO stretching
+    const cropH = makeEven(cropW / targetAspect);
     const cropX = Math.round(srcW * reg.crop.x);
     const cropY = Math.round(srcH * reg.crop.y);
 

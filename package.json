@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "npx tsx --test tests/**/*.test.js"
+    "test": "npx tsx --test tests/**/*.test.*"
   },
   "dependencies": {
     "clsx": "^2.1.1",

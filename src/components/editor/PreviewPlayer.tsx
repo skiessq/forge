@@ -141,12 +141,14 @@ export default function PreviewPlayer() {
                 ctx.drawImage(v2, dx, dy, dw, dh);
               }
             } else {
-              // Primary video cropped and scaled with unconstrained pan support
+              // Primary video cropped and scaled with locked aspect ratio (ZERO STRETCHING)
+              const targetAspect = dw / dh;
               const crop = region.crop;
+              const sw = Math.max(10, crop.width * vW);
+              // Strictly lock source crop aspect ratio to target bounds aspect ratio
+              const sh = sw / targetAspect;
               const sx = crop.x * vW;
               const sy = crop.y * vH;
-              const sw = crop.width * vW;
-              const sh = crop.height * vH;
 
               // Calculate visible intersection with source video
               const visibleSx = Math.max(0, Math.min(vW, sx));
@@ -157,12 +159,12 @@ export default function PreviewPlayer() {
               const visibleSh = visibleEy - visibleSy;
 
               if (visibleSw > 0 && visibleSh > 0 && sw > 0 && sh > 0) {
-                const scaleX = dw / sw;
-                const scaleY = dh / sh;
-                const renderDx = dx + (visibleSx - sx) * scaleX;
-                const renderDy = dy + (visibleSy - sy) * scaleY;
-                const renderDw = visibleSw * scaleX;
-                const renderDh = visibleSh * scaleY;
+                // Uniform scale factor: scaleX === scaleY strictly
+                const scale = dw / sw;
+                const renderDx = dx + (visibleSx - sx) * scale;
+                const renderDy = dy + (visibleSy - sy) * scale;
+                const renderDw = visibleSw * scale;
+                const renderDh = visibleSh * scale;
 
                 ctx.drawImage(video, visibleSx, visibleSy, visibleSw, visibleSh, renderDx, renderDy, renderDw, renderDh);
               }
@@ -272,13 +274,17 @@ export default function PreviewPlayer() {
     const deltaPxX = e.clientX - drag.mouseX;
     const deltaPxY = e.clientY - drag.mouseY;
 
-    // Convert pixel delta to normalized crop delta
-    // Natural panning: dragging right shifts video right (decreases crop.x)
+    // Convert pixel delta to normalized crop delta with 1:1 proportional cursor tracking
     const currentRegion = project.layout.regions.find((r) => r.id === drag.regionId);
     if (!currentRegion) return;
 
+    const vW = primaryVideoRef.current?.videoWidth || 1920;
+    const vH = primaryVideoRef.current?.videoHeight || 1080;
+    const targetAspect = drag.regionWidthPx / Math.max(1, drag.regionHeightPx);
+    const effectiveCropHNorm = (currentRegion.crop.width * (vW / vH)) / targetAspect;
+
     const cropFactorX = currentRegion.crop.width / Math.max(1, drag.regionWidthPx);
-    const cropFactorY = currentRegion.crop.height / Math.max(1, drag.regionHeightPx);
+    const cropFactorY = effectiveCropHNorm / Math.max(1, drag.regionHeightPx);
 
     const newCropX = parseFloat((drag.cropX - deltaPxX * cropFactorX).toFixed(3));
     const newCropY = parseFloat((drag.cropY - deltaPxY * cropFactorY).toFixed(3));

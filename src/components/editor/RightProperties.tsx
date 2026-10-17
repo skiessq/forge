@@ -22,10 +22,15 @@ export default function RightProperties() {
     const factor = Math.max(0.5, Math.min(4.0, targetZoomPercent / 100));
     const currentW = selectedRegion.crop.width;
     const currentH = selectedRegion.crop.height;
-    const aspect = currentH / currentW;
 
     const newW = 1 / factor;
-    const newH = newW * aspect;
+    const targetAspect =
+      (project.canvas.width * selectedRegion.targetBounds.width) /
+      Math.max(1, project.canvas.height * selectedRegion.targetBounds.height);
+    const srcW = probe?.width || 1920;
+    const srcH = probe?.height || 1080;
+    const srcAspect = srcW / srcH;
+    const newH = (newW * srcAspect) / targetAspect;
 
     // Anchor center
     const centerX = selectedRegion.crop.x + currentW / 2;
@@ -41,16 +46,53 @@ export default function RightProperties() {
 
   const applyPreset = (preset: 'facecam_left' | 'facecam_right' | 'game_center' | 'center' | 'full') => {
     if (!selectedRegion) return;
+    const targetAspect =
+      (project.canvas.width * selectedRegion.targetBounds.width) /
+      Math.max(1, project.canvas.height * selectedRegion.targetBounds.height);
+    const srcW = probe?.width || 1920;
+    const srcH = probe?.height || 1080;
+    const srcAspect = srcW / srcH;
+
     if (preset === 'facecam_left') {
-      updateRegionCrop(selectedRegion.id, { x: 0.05, y: 0.05, width: 0.35, height: 0.4 });
+      const w = 0.35;
+      const h = (w * srcAspect) / targetAspect;
+      updateRegionCrop(selectedRegion.id, {
+        x: 0.05,
+        y: 0.05,
+        width: parseFloat(w.toFixed(3)),
+        height: parseFloat(h.toFixed(3)),
+      });
     } else if (preset === 'facecam_right') {
-      updateRegionCrop(selectedRegion.id, { x: 0.60, y: 0.05, width: 0.35, height: 0.4 });
+      const w = 0.35;
+      const h = (w * srcAspect) / targetAspect;
+      updateRegionCrop(selectedRegion.id, {
+        x: 0.60,
+        y: 0.05,
+        width: parseFloat(w.toFixed(3)),
+        height: parseFloat(h.toFixed(3)),
+      });
     } else if (preset === 'game_center') {
-      updateRegionCrop(selectedRegion.id, { x: 0.15, y: 0.1, width: 0.7, height: 0.8 });
+      let h = 1.0;
+      let w = (h * targetAspect) / srcAspect;
+      if (w > 1.0) {
+        w = 1.0;
+        h = (w * srcAspect) / targetAspect;
+      }
+      updateRegionCrop(selectedRegion.id, {
+        x: parseFloat(((1 - w) / 2).toFixed(3)),
+        y: parseFloat(((1 - h) / 2).toFixed(3)),
+        width: parseFloat(w.toFixed(3)),
+        height: parseFloat(h.toFixed(3)),
+      });
     } else if (preset === 'center') {
       const w = selectedRegion.crop.width;
-      const h = selectedRegion.crop.height;
-      updateRegionCrop(selectedRegion.id, { x: parseFloat(((1 - w) / 2).toFixed(3)), y: parseFloat(((1 - h) / 2).toFixed(3)) });
+      const h = (w * srcAspect) / targetAspect;
+      updateRegionCrop(selectedRegion.id, {
+        x: parseFloat(((1 - w) / 2).toFixed(3)),
+        y: parseFloat(((1 - h) / 2).toFixed(3)),
+        width: parseFloat(w.toFixed(3)),
+        height: parseFloat(h.toFixed(3)),
+      });
     } else if (preset === 'full') {
       resetRegionCrop(selectedRegion.id);
     }
@@ -168,10 +210,30 @@ export default function RightProperties() {
               </div>
             </div>
 
+            {/* Unstretched indicator */}
+            <div className="flex items-center justify-between text-[10px] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+              <span className="font-medium">Aspect Ratio Locked</span>
+              <span className="text-emerald-300/80">Square 1:1 Pixels</span>
+            </div>
+
             {/* Pan X (Horizontal Position) with expanded range and direct numeric input */}
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[11px]">
-                <span className="text-slate-400">Horizontal Pan (X)</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400">Horizontal Pan (X)</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateRegionCrop(selectedRegion.id, {
+                        x: parseFloat(((1 - selectedRegion.crop.width) / 2).toFixed(3)),
+                      })
+                    }
+                    className="text-[9px] px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-blue-400 transition"
+                    title="Center Horizontally"
+                  >
+                    Center
+                  </button>
+                </div>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -206,7 +268,21 @@ export default function RightProperties() {
             {/* Pan Y (Vertical Position) with expanded range and direct numeric input */}
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[11px]">
-                <span className="text-slate-400">Vertical Pan (Y)</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400">Vertical Pan (Y)</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateRegionCrop(selectedRegion.id, {
+                        y: parseFloat(((1 - selectedRegion.crop.height) / 2).toFixed(3)),
+                      })
+                    }
+                    className="text-[9px] px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-blue-400 transition"
+                    title="Center Vertically"
+                  >
+                    Center
+                  </button>
+                </div>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"

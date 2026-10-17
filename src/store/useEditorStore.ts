@@ -170,6 +170,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         draft.layout.regions[0].targetBounds.height = clamped;
         draft.layout.regions[1].targetBounds.y = clamped;
         draft.layout.regions[1].targetBounds.height = 1 - clamped;
+
+        const canvasW = draft.canvas.width;
+        const canvasH = draft.canvas.height;
+        const srcW = draft.source.probe?.width || 1920;
+        const srcH = draft.source.probe?.height || 1080;
+        const srcAspect = srcW / srcH;
+
+        // Automatically update crop aspect ratios to eliminate stretching
+        for (let i = 0; i < 2; i++) {
+          const reg = draft.layout.regions[i];
+          const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
+          const currentW = reg.crop.width;
+          const centerX = reg.crop.x + currentW / 2;
+          const centerY = reg.crop.y + reg.crop.height / 2;
+
+          const newH = (currentW * srcAspect) / targetAspect;
+          reg.crop.height = parseFloat(newH.toFixed(3));
+          reg.crop.y = parseFloat((centerY - newH / 2).toFixed(3));
+        }
       }
       return draft;
     });
@@ -194,18 +213,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().updateProject((draft) => {
       const region = draft.layout.regions.find((r) => r.id === regionId);
       if (region) {
+        const canvasW = draft.canvas.width;
+        const canvasH = draft.canvas.height;
+        const targetAspect = (canvasW * region.targetBounds.width) / Math.max(1, canvasH * region.targetBounds.height);
+        const srcW = draft.source.probe?.width || 1920;
+        const srcH = draft.source.probe?.height || 1080;
+        const srcAspect = srcW / srcH;
+
         const currentW = region.crop.width;
-        const currentH = region.crop.height;
         const newW = Math.max(0.05, Math.min(2.5, currentW / zoomFactor));
-        const newH = Math.max(0.05, Math.min(2.5, currentH / zoomFactor));
+        const newH = (newW * srcAspect) / targetAspect;
+
         // Keep center anchored
         const centerX = region.crop.x + currentW / 2;
-        const centerY = region.crop.y + currentH / 2;
+        const centerY = region.crop.y + region.crop.height / 2;
         region.crop = {
-          x: centerX - newW / 2,
-          y: centerY - newH / 2,
-          width: newW,
-          height: newH,
+          x: parseFloat((centerX - newW / 2).toFixed(3)),
+          y: parseFloat((centerY - newH / 2).toFixed(3)),
+          width: parseFloat(newW.toFixed(3)),
+          height: parseFloat(newH.toFixed(3)),
         };
       }
       return draft;
@@ -216,11 +242,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().updateProject((draft) => {
       const region = draft.layout.regions.find((r) => r.id === regionId);
       if (region) {
+        const canvasW = draft.canvas.width;
+        const canvasH = draft.canvas.height;
+        const targetAspect = (canvasW * region.targetBounds.width) / Math.max(1, canvasH * region.targetBounds.height);
+        const srcW = draft.source.probe?.width || 1920;
+        const srcH = draft.source.probe?.height || 1080;
+        const srcAspect = srcW / srcH;
+
+        let w = 1.0;
+        let h = (w * srcAspect) / targetAspect;
+        if (h > 1.0) {
+          h = 1.0;
+          w = (h * targetAspect) / srcAspect;
+        }
+
         region.crop = {
-          x: 0,
-          y: 0,
-          width: 1,
-          height: 1,
+          x: parseFloat(((1 - w) / 2).toFixed(3)),
+          y: parseFloat(((1 - h) / 2).toFixed(3)),
+          width: parseFloat(w.toFixed(3)),
+          height: parseFloat(h.toFixed(3)),
         };
       }
       return draft;
