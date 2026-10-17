@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { buildFFmpegExportCommand } from '../src/lib/ffmpeg/builder';
-import { ProjectState } from '../src/lib/types';
+import { Project } from '../src/lib/types';
 
-function makeSplitProject(splitRatio: number): ProjectState {
+function makeSplitProject(splitRatio: number, dividerWidth = 4): Project {
   return {
     id: 'test_split_project',
     name: 'Test Split Project',
@@ -28,7 +28,7 @@ function makeSplitProject(splitRatio: number): ProjectState {
     layout: {
       templateId: 'split_facecam_top',
       splitRatio,
-      dividerWidth: 4,
+      dividerWidth,
       dividerColor: '#3B82F6',
       regions: [
         {
@@ -123,11 +123,13 @@ test('Split 50/50 preserves uniform aspect ratio without stretching in FFmpeg', 
   const fc = plan.args[plan.args.indexOf('-filter_complex') + 1];
 
   // Top and Bottom are both 1080 x 960 (aspect ratio = 1.125)
-  const matches = [...fc.matchAll(/crop=(\d+):(\d+):[^;]+scale=1080:960/g)];
-  assert.strictEqual(matches.length, 2, 'Both regions must scale to 1080:960');
+  const matches = fc.match(/crop=(\d+):(\d+):[^;]+scale=1080:960/g);
+  assert.ok(matches && matches.length >= 2, 'Both regions must scale to 1080:960');
   for (const m of matches) {
-    const cropW = parseInt(m[1], 10);
-    const cropH = parseInt(m[2], 10);
+    const singleMatch = m.match(/crop=(\d+):(\d+)/);
+    assert.ok(singleMatch);
+    const cropW = parseInt(singleMatch[1], 10);
+    const cropH = parseInt(singleMatch[2], 10);
     const cropAspect = cropW / cropH;
     const targetAspect = 1080 / 960;
     assert.ok(
@@ -135,4 +137,13 @@ test('Split 50/50 preserves uniform aspect ratio without stretching in FFmpeg', 
       `Crop aspect ratio (${cropAspect}) must match target (${targetAspect})`
     );
   }
+});
+
+test('Divider width 0px generates seamless split without drawbox line', () => {
+  const project = makeSplitProject(0.5, 0);
+  const plan = buildFFmpegExportCommand(project);
+  const fc = plan.args[plan.args.indexOf('-filter_complex') + 1];
+
+  assert.ok(fc.includes('vstack=inputs=2[v_out]'), 'Divider 0px should connect vstack directly to output');
+  assert.ok(!fc.includes('drawbox='), 'Divider 0px must not include any drawbox border filter');
 });

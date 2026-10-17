@@ -414,6 +414,100 @@ export default function RightProperties() {
               className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
             />
           </div>
+
+          {/* Split Divider Controls with 0px (Off) option */}
+          {project.layout.regions.length >= 2 && (
+            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
+              <div className="flex justify-between items-center text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-300 font-medium">Split Divider</span>
+                  {(project.layout.dividerWidth ?? 0) === 0 ? (
+                    <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-medium">
+                      0px (Off)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 font-mono">
+                      {project.layout.dividerWidth}px
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="color"
+                  disabled={(project.layout.dividerWidth ?? 0) === 0}
+                  value={project.layout.dividerColor || '#3B82F6'}
+                  onChange={(e) => {
+                    updateProject((draft) => {
+                      draft.layout.dividerColor = e.target.value;
+                      return draft;
+                    });
+                  }}
+                  className={`w-5 h-5 rounded cursor-pointer border-0 bg-transparent transition ${
+                    (project.layout.dividerWidth ?? 0) === 0 ? 'opacity-30 cursor-not-allowed' : ''
+                  }`}
+                  title={
+                    (project.layout.dividerWidth ?? 0) === 0
+                      ? 'Color inactive when divider is 0px'
+                      : 'Change divider color'
+                  }
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="12"
+                  step="1"
+                  value={project.layout.dividerWidth ?? 0}
+                  onChange={(e) => {
+                    updateProject((draft) => {
+                      draft.layout.dividerWidth = parseInt(e.target.value, 10);
+                      return draft;
+                    });
+                  }}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <span className="text-xs font-mono text-slate-300 w-8 text-right">
+                  {project.layout.dividerWidth ?? 0}px
+                </span>
+              </div>
+
+              {/* Quick Thickness Presets */}
+              <div className="grid grid-cols-5 gap-1 pt-0.5">
+                {[
+                  { label: '0px (Off)', val: 0, title: 'No divider line (seamless split)' },
+                  { label: '2px', val: 2, title: 'Subtle 2px line' },
+                  { label: '4px', val: 4, title: 'Standard 4px line' },
+                  { label: '6px', val: 6, title: 'Bold 6px line' },
+                  { label: '8px', val: 8, title: 'Thick 8px line' },
+                ].map((preset) => {
+                  const isSelected = (project.layout.dividerWidth ?? 0) === preset.val;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        updateProject((draft) => {
+                          draft.layout.dividerWidth = preset.val;
+                          return draft;
+                        });
+                      }}
+                      title={preset.title}
+                      className={`py-1 text-[10px] rounded border transition text-center ${
+                        isSelected
+                          ? preset.val === 0
+                            ? 'bg-emerald-600 border-emerald-500 text-white font-bold'
+                            : 'bg-blue-600 border-blue-500 text-white font-bold'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                    >
+                      {preset.val === 0 ? '0px (Off)' : `${preset.val}px`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="text-center py-6 text-slate-500 italic">
