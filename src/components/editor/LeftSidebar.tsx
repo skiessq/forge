@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { LayoutTemplateId } from '@/lib/types';
 import SilenceRemovalModal from './SilenceRemovalModal';
+import SubtitleEditor from './SubtitleEditor';
 
 export default function LeftSidebar() {
   const { project, setLayoutTemplate, setSplitRatio, updateProject } = useEditorStore();
@@ -217,22 +218,8 @@ export default function LeftSidebar() {
           </div>
         )}
 
-        {/* TAB 2: CAPTIONS / SUBTITLES PLACEHOLDER (Will be expanded in Phase 4) */}
-        {activeTab === 'subtitles' && (
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2 text-slate-300">
-              <span className="font-semibold text-white">Subtitle Engine</span>
-              <p className="text-[11px] text-slate-400 leading-snug">
-                One-click local Whisper AI speech-to-text with word-level timestamps and karaoke animation.
-              </p>
-              <div className="pt-2">
-                <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-mono">
-                  Phase 4 Feature
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* TAB 2: CAPTIONS / SUBTITLES */}
+        {activeTab === 'subtitles' && <SubtitleEditor />}
 
         {/* TAB 3: AUDIO RULES */}
         {activeTab === 'audio' && (

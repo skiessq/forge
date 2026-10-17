@@ -240,8 +240,20 @@ export function buildFFmpegExportCommand(
     encoderArgs.push('-preset', preset, '-crf', '19');
   }
 
-  // Audio processing pipeline
-  const audioFilters: string[] = [];
+  // Subtitle burning with libass
+  if (project.subtitles && project.subtitles.length > 0) {
+    const { generateAssSubtitles } = require('../subtitles/assGenerator');
+    const assContent = generateAssSubtitles(project);
+    const assPath = path.join(projectDir, 'subtitles.ass');
+    fs.writeFileSync(assPath, assContent, 'utf-8');
+
+    // Escape Windows file path for FFmpeg subtitles filter: C\:/path/to/file.ass
+    const escapedAssPath = assPath.replace(/\\/g, '/').replace(':', '\\:');
+    filterChains.push(
+      `${finalVideoStream}subtitles='${escapedAssPath}'[v_subbed]`
+    );
+    finalVideoStream = '[v_subbed]';
+  }
   const audioSettings = project.audioSettings || {
     keepOriginalAudio: true,
     sourceAudioTrackIndex: 0,
