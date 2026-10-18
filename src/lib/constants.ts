@@ -1,4 +1,4 @@
-import { LayoutConfig, SubtitleStyle, Project, CanvasConfig, LayoutTemplateId } from './types';
+import { LayoutConfig, SubtitleStyle, Project, CanvasConfig, LayoutTemplateId, TransitionType } from './types';
 
 export const DEFAULT_CANVAS: CanvasConfig = {
   width: 1080,
@@ -6,6 +6,23 @@ export const DEFAULT_CANVAS: CanvasConfig = {
   fps: 30,
   aspectRatio: '9:16',
 };
+
+export interface TransitionPreset {
+  id: TransitionType;
+  label: string;
+  desc: string;
+}
+
+export const TRANSITION_PRESETS: TransitionPreset[] = [
+  { id: 'cut', label: 'Cut (None)', desc: 'Instant cut without transition' },
+  { id: 'crossfade', label: 'Crossfade', desc: 'Smooth dissolve blend between clips' },
+  { id: 'fade', label: 'Fade to Black', desc: 'Cinematic dip through black' },
+  { id: 'slide_left', label: 'Slide Left', desc: 'High energy horizontal push' },
+  { id: 'slide_up', label: 'Slide Up', desc: 'Vertical upward swipe' },
+  { id: 'zoom', label: 'Zoom In', desc: 'Punchy camera zoom warp' },
+  { id: 'wipe', label: 'Wipe Left', desc: 'Clean linear boundary wipe' },
+  { id: 'glitch', label: 'Glitch / Pixelize', desc: 'Digital pixel glitch transition' },
+];
 
 export const CANVAS_PRESETS: Record<string, CanvasConfig> = {
   '9:16': { width: 1080, height: 1920, fps: 30, aspectRatio: '9:16' },

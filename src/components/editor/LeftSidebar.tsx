@@ -14,6 +14,7 @@ import {
   Scissors,
   Play,
   Move,
+  Film,
 } from 'lucide-react';
 import { LayoutTemplateId, IntroHookTransition } from '@/lib/types';
 import { BUILT_IN_FONTS } from '@/lib/constants';
@@ -26,7 +27,19 @@ import SecondaryMediaManager from './SecondaryMediaManager';
 import { Bookmark, FolderDown, PlusCircle } from 'lucide-react';
 
 export default function LeftSidebar() {
-  const { project, setLayoutTemplate, setSplitRatio, updateProject, setCurrentTime, setIsPlaying } = useEditorStore();
+  const {
+    project,
+    setLayoutTemplate,
+    setSplitRatio,
+    updateProject,
+    setCurrentTime,
+    setIsPlaying,
+    selectedClipId,
+    setSelectedClipId,
+    layoutScope,
+    setLayoutScope,
+    currentTime,
+  } = useEditorStore();
   const [activeTab, setActiveTab] = useState<'layout' | 'media' | 'subtitles' | 'audio' | 'effects' | 'presets'>('layout');
   const [isSilenceModalOpen, setIsSilenceModalOpen] = useState(false);
   const [isAutoSplitOpen, setIsAutoSplitOpen] = useState(false);
@@ -36,6 +49,18 @@ export default function LeftSidebar() {
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   const videoTrack = project?.tracks?.find((t) => t.type === 'video');
+  const clips = videoTrack?.clips || [];
+  const hasMultipleClips = clips.length > 1;
+
+  const activeClip = hasMultipleClips
+    ? (clips.find((c) => selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration) || clips[0])
+    : clips[0];
+  const activeClipIndex = activeClip ? clips.indexOf(activeClip) : 0;
+
+  const currentLayout = (hasMultipleClips && layoutScope === 'clip' && activeClip?.layoutOverride)
+    ? activeClip.layoutOverride
+    : (activeClip?.layoutOverride || project?.layout);
+
   const videoDuration = Math.round((videoTrack?.clips?.reduce((acc, c) => acc + c.duration, 0) || project?.source?.probe?.duration || 30) * 10) / 10;
 
   const handleSaveTemplate = async () => {
@@ -189,17 +214,105 @@ export default function LeftSidebar() {
         {/* TAB 1: LAYOUT TEMPLATES */}
         {activeTab === 'layout' && (
           <div className="space-y-4">
+            {/* Multi-Clip Segment Header & Scope Switcher */}
+            {hasMultipleClips && (
+              <div className="p-3 bg-gradient-to-r from-blue-950/50 via-slate-900 to-indigo-950/40 border border-blue-500/30 rounded-xl space-y-2.5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Film className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-xs font-bold text-white">
+                      {activeClip ? `Segment ${activeClipIndex + 1}` : 'Selected Clip'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      ({(activeClip?.duration || 0).toFixed(1)}s)
+                    </span>
+                  </div>
+                  {/* Next / Prev Navigation between split clips */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const prev = clips[activeClipIndex - 1];
+                        if (prev) {
+                          setSelectedClipId(prev.id);
+                          setCurrentTime(prev.start);
+                        }
+                      }}
+                      disabled={activeClipIndex <= 0}
+                      className="px-1.5 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-300 font-medium"
+                      title="Previous clip"
+                    >
+                      ◀ Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = clips[activeClipIndex + 1];
+                        if (next) {
+                          setSelectedClipId(next.id);
+                          setCurrentTime(next.start);
+                        }
+                      }}
+                      disabled={activeClipIndex >= clips.length - 1}
+                      className="px-1.5 py-0.5 text-[10px] bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-300 font-medium"
+                      title="Next clip"
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+
+                {/* Scope selector */}
+                <div className="grid grid-cols-2 p-0.5 bg-slate-950 rounded-lg border border-slate-800 text-[11px] font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setLayoutScope('clip')}
+                    className={`py-1 rounded-md transition ${
+                      layoutScope === 'clip'
+                        ? 'bg-blue-600 text-white font-semibold shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    This Clip Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLayoutScope('all')}
+                    className={`py-1 rounded-md transition ${
+                      layoutScope === 'all'
+                        ? 'bg-blue-600 text-white font-semibold shadow'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    All Clips
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  {layoutScope === 'clip'
+                    ? `Layout and crops will only apply to Segment ${activeClipIndex + 1}.`
+                    : 'Layout changes will apply to all clips on the timeline.'}
+                </p>
+              </div>
+            )}
+
             <div>
-              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                Layout Template
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Layout Template
+                </h3>
+                {hasMultipleClips && layoutScope === 'clip' && (
+                  <span className="text-[10px] text-blue-400 font-mono font-medium">
+                    Segment {activeClipIndex + 1}
+                  </span>
+                )}
+              </div>
               <div className="space-y-2">
                 {templates.map((tpl) => {
-                  const isActive = project.layout.templateId === tpl.id;
+                  const isActive = (currentLayout?.templateId || project.layout.templateId) === tpl.id;
                   return (
                     <button
                       key={tpl.id}
-                      onClick={() => setLayoutTemplate(tpl.id)}
+                      onClick={() => setLayoutTemplate(tpl.id, layoutScope === 'clip' ? activeClip?.id : null)}
                       className={`w-full text-left p-3 rounded-xl border transition flex items-start justify-between ${
                         isActive
                           ? 'bg-blue-600/10 border-blue-500/80 text-white'
@@ -223,10 +336,10 @@ export default function LeftSidebar() {
             <SecondaryMediaManager />
 
             {/* Split Ratio Slider (if split template) */}
-            {(project.layout.templateId === 'split_facecam_top' ||
-              project.layout.templateId === 'split_gameplay_top' ||
-              project.layout.templateId === 'media_top_game_bottom' ||
-              project.layout.templateId === 'media_bottom_game_top') && (
+            {(currentLayout?.templateId === 'split_facecam_top' ||
+              currentLayout?.templateId === 'split_gameplay_top' ||
+              currentLayout?.templateId === 'media_top_game_bottom' ||
+              currentLayout?.templateId === 'media_bottom_game_top') && (
               <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-300 font-medium">Split Ratio</span>
@@ -235,8 +348,8 @@ export default function LeftSidebar() {
                       Unstretched
                     </span>
                     <span className="font-mono text-blue-400 font-bold">
-                      {Math.round((project.layout.splitRatio || 0.5) * 100)} /{' '}
-                      {100 - Math.round((project.layout.splitRatio || 0.5) * 100)}
+                      {Math.round((currentLayout.splitRatio || 0.5) * 100)} /{' '}
+                      {100 - Math.round((currentLayout.splitRatio || 0.5) * 100)}
                     </span>
                   </div>
                 </div>
@@ -246,7 +359,7 @@ export default function LeftSidebar() {
                   min="0.20"
                   max="0.80"
                   step="0.01"
-                  value={project.layout.splitRatio || 0.5}
+                  value={currentLayout.splitRatio || 0.5}
                   onChange={(e) => setSplitRatio(parseFloat(e.target.value))}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />

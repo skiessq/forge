@@ -136,14 +136,25 @@ export default function PreviewPlayer() {
   };
 
   const videoTrack = project?.tracks?.find((t) => t.type === 'video');
-  const activeClip = videoTrack?.clips?.find(
-    (c) => (selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration)
-  ) || videoTrack?.clips?.[0];
+  const clips = videoTrack?.clips || [];
+  const hasMultipleClips = clips.length > 1;
 
-  const hasMultipleClips = (videoTrack?.clips?.length || 0) > 1;
+  // Real-time clip tracking during playback, selection priority when paused
+  const playingClip = clips.find(
+    (c) => currentTime >= c.start && currentTime < c.start + c.duration
+  ) || clips[0];
+
+  const activeClip = isPlaying
+    ? playingClip
+    : (selectedClipId ? clips.find((c) => c.id === selectedClipId) || playingClip : playingClip);
+
   const effectiveLayout = (hasMultipleClips && activeClip?.layoutOverride)
     ? activeClip.layoutOverride
     : project?.layout;
+
+  const secondaryPath = effectiveLayout?.secondaryMediaPath || project?.layout?.secondaryMediaPath;
+  const secondaryMediaType = effectiveLayout?.secondaryMediaType || project?.layout?.secondaryMediaType;
+  const secondaryMediaProbe = effectiveLayout?.secondaryMediaProbe || project?.layout?.secondaryMediaProbe;
 
   const getMediaTimeFromTimeline = useCallback(
     (t: number) => {
@@ -168,8 +179,8 @@ export default function PreviewPlayer() {
   if (!project || !effectiveLayout) return null;
 
   const videoSrc = `/api/media/serve?path=${encodeURIComponent(project.source.path)}`;
-  const secondarySrc = project.layout.secondaryMediaPath
-    ? `/api/media/serve?path=${encodeURIComponent(project.layout.secondaryMediaPath)}`
+  const secondarySrc = secondaryPath
+    ? `/api/media/serve?path=${encodeURIComponent(secondaryPath)}`
     : null;
 
   const canvasWidth = project.canvas.width;
@@ -302,7 +313,7 @@ export default function PreviewPlayer() {
 
               if (
                 secondaryVideoRef.current &&
-                (project.layout.secondaryMediaType === 'video' || !project.layout.secondaryMediaType)
+                (secondaryMediaType === 'video' || !secondaryMediaType)
               ) {
                 const v2 = secondaryVideoRef.current;
                 if (v2.readyState >= 2 && v2.videoWidth > 0) {
@@ -312,7 +323,7 @@ export default function PreviewPlayer() {
                 }
               } else if (
                 secondaryImageRef.current &&
-                (project.layout.secondaryMediaType === 'image' || project.layout.secondaryMediaType === 'gif')
+                (secondaryMediaType === 'image' || secondaryMediaType === 'gif')
               ) {
                 const img = secondaryImageRef.current;
                 if (img.complete && img.naturalWidth > 0) {
@@ -347,7 +358,7 @@ export default function PreviewPlayer() {
 
                   ctx.drawImage(sourceElement, visibleSx, visibleSy, visibleSw, visibleSh, renderDx, renderDy, renderDw, renderDh);
                 }
-              } else if (!project.layout.secondaryMediaPath) {
+              } else if (!secondaryPath) {
                 ctx.save();
                 ctx.strokeStyle = 'rgba(59, 130, 246, 0.35)';
                 ctx.lineWidth = 3;
@@ -551,7 +562,7 @@ export default function PreviewPlayer() {
       setSelectedOverlayType(null);
 
       // If clicked region is secondary_media slot and no media is uploaded yet
-      if (clickedRegion.sourceType === 'secondary_media' && !project.layout.secondaryMediaPath) {
+      if (clickedRegion.sourceType === 'secondary_media' && !secondaryPath) {
         secondaryFileInputRef.current?.click();
         return;
       }
@@ -563,12 +574,12 @@ export default function PreviewPlayer() {
       const secW =
         secondaryVideoRef.current?.videoWidth ||
         secondaryImageRef.current?.naturalWidth ||
-        project.layout.secondaryMediaProbe?.width ||
+        secondaryMediaProbe?.width ||
         1920;
       const secH =
         secondaryVideoRef.current?.videoHeight ||
         secondaryImageRef.current?.naturalHeight ||
-        project.layout.secondaryMediaProbe?.height ||
+        secondaryMediaProbe?.height ||
         1080;
       const vW = isSec ? secW : (primaryVideoRef.current?.videoWidth || 1920);
       const vH = isSec ? secH : (primaryVideoRef.current?.videoHeight || 1080);
@@ -1055,7 +1066,7 @@ export default function PreviewPlayer() {
           />
 
           {/* Secondary media video (if any) */}
-          {secondarySrc && (project.layout.secondaryMediaType === 'video' || !project.layout.secondaryMediaType) && (
+          {secondarySrc && (secondaryMediaType === 'video' || !secondaryMediaType) && (
             <video
               ref={secondaryVideoRef}
               src={secondarySrc}
@@ -1067,7 +1078,7 @@ export default function PreviewPlayer() {
           )}
 
           {/* Secondary media image / GIF (if any) */}
-          {secondarySrc && (project.layout.secondaryMediaType === 'image' || project.layout.secondaryMediaType === 'gif') && (
+          {secondarySrc && (secondaryMediaType === 'image' || secondaryMediaType === 'gif') && (
             <img
               ref={secondaryImageRef}
               src={secondarySrc}
@@ -1114,7 +1125,7 @@ export default function PreviewPlayer() {
                 </div>
 
                 {/* If secondary media slot is empty, show interactive upload button right in the preview */}
-                {region.sourceType === 'secondary_media' && !project.layout.secondaryMediaPath && (
+                {region.sourceType === 'secondary_media' && !secondaryPath && (
                   <div
                     style={{
                       position: 'absolute',

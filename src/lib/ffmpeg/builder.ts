@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { Project, ExportSettings, LayoutRegion } from '../types';
+import { Project, ExportSettings, LayoutRegion, TransitionType, TransitionConfig } from '../types';
 import { formatHookLines } from '../utils/hookText';
 import { probeMedia } from './probe';
 
@@ -50,28 +50,40 @@ export function buildFFmpegExportCommand(
   // Primary source input (index 0)
   inputs.push('-i', project.source.path);
 
-  // Check if secondary media is used (for layouts media_top_game_bottom, media_bottom_game_top)
-  let secondaryInputIndex = -1;
-  const usesSecondary =
-    (project.layout.templateId === 'media_top_game_bottom' ||
-      project.layout.templateId === 'media_bottom_game_top') &&
-    project.layout.secondaryMediaPath;
-
-  if (usesSecondary && project.layout.secondaryMediaPath) {
-    secondaryInputIndex = getNextInputIndex();
-    if (project.layout.secondaryMediaType === 'video') {
-      // Loop secondary video if shorter than clip
-      inputs.push('-stream_loop', '-1', '-i', project.layout.secondaryMediaPath);
-    } else {
-      // Image or GIF
-      inputs.push('-loop', '1', '-i', project.layout.secondaryMediaPath);
-    }
-  }
-
   // Check if timeline video track has trims or splits
   const allTracks = project.tracks || (project as any).timeline?.tracks || [];
   const videoTrack = allTracks.find((t) => t.type === 'video');
   const clips = videoTrack?.clips || [];
+
+  // Check if secondary media is used in global layout or in any clip override
+  let secondaryInputIndex = -1;
+  const secondaryPath =
+    project.layout.secondaryMediaPath ||
+    clips.find((c) => c.layoutOverride?.secondaryMediaPath)?.layoutOverride?.secondaryMediaPath;
+  const secondaryMediaType =
+    project.layout.secondaryMediaType ||
+    clips.find((c) => c.layoutOverride?.secondaryMediaType)?.layoutOverride?.secondaryMediaType ||
+    'video';
+
+  const usesSecondary =
+    Boolean(secondaryPath) &&
+    (project.layout.templateId === 'media_top_game_bottom' ||
+      project.layout.templateId === 'media_bottom_game_top' ||
+      clips.some((c) => {
+        const tpl = c.layoutOverride?.templateId;
+        return tpl === 'media_top_game_bottom' || tpl === 'media_bottom_game_top';
+      }));
+
+  if (usesSecondary && secondaryPath && fs.existsSync(secondaryPath)) {
+    secondaryInputIndex = getNextInputIndex();
+    if (secondaryMediaType === 'video') {
+      // Loop secondary video if shorter than clip
+      inputs.push('-stream_loop', '-1', '-i', secondaryPath);
+    } else {
+      // Image or GIF
+      inputs.push('-loop', '1', '-i', secondaryPath);
+    }
+  }
   // Source video dimensions
   const srcW = project.source.probe?.width || 1920;
   const srcH = project.source.probe?.height || 1080;
@@ -260,7 +272,7 @@ export function buildFFmpegExportCommand(
     return chains;
   }
 
-  // Handle video tracks and clips (with per-clip layout overrides)
+  // Handle video tracks and clips (with per-clip layout overrides & transitions)
   let finalVideoStream = '[v_out]';
 
   if (clips.length > 1) {
@@ -277,7 +289,68 @@ export function buildFFmpegExportCommand(
       renderedClips.push(renderedClip);
     });
 
-    filterChains.push(`${renderedClips.join('')}concat=n=${clips.length}:v=1:a=0[v_out]`);
+    const transitions = project.transitions || [];
+    const validTransitions: { fromIndex: number; toIndex: number; type: TransitionType; duration: number }[] = [];
+
+    for (let i = 0; i < clips.length - 1; i++) {
+      const fromClip = clips[i];
+      const toClip = clips[i + 1];
+      const tr = transitions.find(
+        (t) => t.fromClipId === fromClip.id && t.toClipId === toClip.id && t.type !== 'cut'
+      );
+      if (tr) {
+        const maxDur = Math.min(fromClip.duration || 1, toClip.duration || 1) * 0.45;
+        const dur = Math.max(0.1, Math.min(tr.duration || 0.5, maxDur));
+        validTransitions.push({
+          fromIndex: i,
+          toIndex: i + 1,
+          type: tr.type,
+          duration: dur,
+        });
+      }
+    }
+
+    if (validTransitions.length === 0) {
+      filterChains.push(`${renderedClips.join('')}concat=n=${clips.length}:v=1:a=0[v_out]`);
+    } else {
+      const getXfadeName = (t: TransitionType): string => {
+        switch (t) {
+          case 'crossfade': return 'dissolve';
+          case 'fade': return 'fadeblack';
+          case 'slide_left': return 'slideleft';
+          case 'slide_up': return 'slideup';
+          case 'zoom': return 'zoomin';
+          case 'wipe': return 'wipeleft';
+          case 'glitch': return 'pixelize';
+          default: return 'fade';
+        }
+      };
+
+      let currentStream = renderedClips[0];
+      let currentDuration = clips[0].duration || 1;
+
+      for (let i = 1; i < clips.length; i++) {
+        const nextClipStream = renderedClips[i];
+        const nextDuration = clips[i].duration || 1;
+        const tr = validTransitions.find((t) => t.fromIndex === i - 1 && t.toIndex === i);
+        const outputStream = i === clips.length - 1 ? '[v_out]' : `[v_chain_${i}]`;
+
+        if (tr) {
+          const offset = Math.max(0.01, currentDuration - tr.duration).toFixed(2);
+          const xfadeName = getXfadeName(tr.type);
+          filterChains.push(
+            `${currentStream}${nextClipStream}xfade=transition=${xfadeName}:duration=${tr.duration.toFixed(2)}:offset=${offset}${outputStream}`
+          );
+          currentDuration = currentDuration + nextDuration - tr.duration;
+        } else {
+          filterChains.push(
+            `${currentStream}${nextClipStream}concat=n=2:v=1:a=0${outputStream}`
+          );
+          currentDuration = currentDuration + nextDuration;
+        }
+        currentStream = outputStream;
+      }
+    }
   } else {
     // Single clip
     let baseClipInput = '[0:v]';
@@ -479,9 +552,38 @@ export function buildFFmpegExportCommand(
         );
         segStreams.push(segStream);
       });
-      filterChains.push(
-        `${segStreams.join('')}concat=n=${clips.length}:v=0:a=1[a_concatenated]`
+
+      const transitions = project.transitions || [];
+      const hasAnyTransition = clips.some(
+        (c, i) =>
+          i < clips.length - 1 &&
+          transitions.some((t) => t.fromClipId === c.id && t.toClipId === clips[i + 1].id && t.type !== 'cut')
       );
+
+      if (!hasAnyTransition) {
+        filterChains.push(
+          `${segStreams.join('')}concat=n=${clips.length}:v=0:a=1[a_concatenated]`
+        );
+      } else {
+        let currentAudio = segStreams[0];
+        for (let i = 1; i < clips.length; i++) {
+          const nextAudio = segStreams[i];
+          const tr = transitions.find(
+            (t) => t.fromClipId === clips[i - 1].id && t.toClipId === clips[i].id && t.type !== 'cut'
+          );
+          const outputAudio = i === clips.length - 1 ? '[a_concatenated]' : `[a_chain_${i}]`;
+          if (tr) {
+            const maxDur = Math.min(clips[i - 1].duration || 1, clips[i].duration || 1) * 0.45;
+            const dur = Math.max(0.1, Math.min(tr.duration || 0.5, maxDur));
+            filterChains.push(
+              `${currentAudio}${nextAudio}acrossfade=d=${dur.toFixed(2)}:c1=tri:c2=tri${outputAudio}`
+            );
+          } else {
+            filterChains.push(`${currentAudio}${nextAudio}concat=n=2:v=0:a=1${outputAudio}`);
+          }
+          currentAudio = outputAudio;
+        }
+      }
       currentAudioNode = `[a_concatenated]`;
     }
 
@@ -516,12 +618,29 @@ export function buildFFmpegExportCommand(
     args.push('-map', audioInputMap, '-c:a', 'copy');
   }
 
-  const outputDuration = clips.length > 0
+  let totalTransitionsOverlap = 0;
+  if (clips.length > 1 && project.transitions) {
+    for (let i = 0; i < clips.length - 1; i++) {
+      const fromClip = clips[i];
+      const toClip = clips[i + 1];
+      const tr = project.transitions.find(
+        (t) => t.fromClipId === fromClip.id && t.toClipId === toClip.id && t.type !== 'cut'
+      );
+      if (tr) {
+        const maxDur = Math.min(fromClip.duration || 1, toClip.duration || 1) * 0.45;
+        const dur = Math.max(0.1, Math.min(tr.duration || 0.5, maxDur));
+        totalTransitionsOverlap += dur;
+      }
+    }
+  }
+
+  const rawSum = clips.length > 0
     ? clips.reduce((acc, c) => acc + (c.duration || 0), 0)
     : (project.source.probe?.duration || 10);
+  const outputDuration = Math.max(0.5, rawSum - totalTransitionsOverlap);
 
   args.push(
-    '-t', (outputDuration || 10).toFixed(2),
+    '-t', outputDuration.toFixed(2),
     '-c:v', videoEncoder,
     ...encoderArgs,
     '-r', String(fps),

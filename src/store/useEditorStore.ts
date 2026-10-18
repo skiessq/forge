@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Project, AspectRatio, LayoutTemplateId, CropRect, SubtitleStyle, IntroHookConfig } from '@/lib/types';
+import { Project, AspectRatio, LayoutTemplateId, CropRect, SubtitleStyle, IntroHookConfig, TransitionType } from '@/lib/types';
 import { CANVAS_PRESETS, getLayoutTemplate } from '@/lib/constants';
 
 interface EditorState {
@@ -23,6 +23,9 @@ interface EditorState {
   safeZoneVisible: boolean;
   isTimelineVisible: boolean;
   snappingEnabled: boolean;
+
+  layoutScope: 'clip' | 'all';
+  setLayoutScope: (scope: 'clip' | 'all') => void;
 
   // History for Undo/Redo (at least 50 steps)
   history: Project[];
@@ -50,7 +53,7 @@ interface EditorState {
   setSelectedOverlayType: (type: 'region' | 'subtitle' | 'hook' | null) => void;
 
   setCanvasAspectRatio: (ratio: AspectRatio) => void;
-  setLayoutTemplate: (templateId: LayoutTemplateId) => void;
+  setLayoutTemplate: (templateId: LayoutTemplateId, targetClipId?: string | null) => void;
   setSplitRatio: (ratio: number) => void;
   setSecondaryMedia: (
     mediaPath: string | null,
@@ -60,6 +63,8 @@ interface EditorState {
   updateRegionCrop: (regionId: string, crop: Partial<CropRect>) => void;
   zoomRegion: (regionId: string, zoomFactor: number) => void;
   resetRegionCrop: (regionId: string) => void;
+  setTransition: (fromClipId: string, toClipId: string, type: TransitionType, duration?: number) => void;
+  removeTransition: (fromClipId: string, toClipId: string) => void;
   updateSubtitleStyle: (style: Partial<SubtitleStyle>) => void;
   updateIntroHook: (hook: Partial<IntroHookConfig>) => void;
 
@@ -85,6 +90,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   safeZoneVisible: true,
   isTimelineVisible: true,
   snappingEnabled: true,
+  layoutScope: 'clip',
+  setLayoutScope: (layoutScope) => set({ layoutScope }),
 
   history: [],
   historyIndex: -1,
@@ -164,7 +171,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleSnapping: () => set((state) => ({ snappingEnabled: !state.snappingEnabled })),
   setSelectedRegionId: (id) => set({ selectedRegionId: id, selectedOverlayType: id ? 'region' : null }),
   setSelectedSubtitleId: (id) => set({ selectedSubtitleId: id, selectedOverlayType: id ? 'subtitle' : null }),
-  setSelectedClipId: (id) => set({ selectedClipId: id }),
+  setSelectedClipId: (id) => set({ selectedClipId: id, layoutScope: id ? 'clip' : get().layoutScope }),
   setSelectedOverlayType: (selectedOverlayType) => set({ selectedOverlayType }),
 
   setCanvasAspectRatio: (ratio) => {
@@ -176,42 +183,102 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  setLayoutTemplate: (templateId) => {
+  setLayoutTemplate: (templateId, targetClipId) => {
     get().updateProject((draft) => {
-      draft.layout = getLayoutTemplate(templateId, draft.layout.splitRatio || 0.5);
+      const { selectedClipId, layoutScope, currentTime } = get();
+      const vTrack = draft.tracks.find((t) => t.type === 'video');
+      const clips = vTrack?.clips || [];
+      const hasMultipleClips = clips.length > 1;
+
+      // Check if we target a specific clip
+      const effectiveClipId = targetClipId !== undefined
+        ? targetClipId
+        : (hasMultipleClips && layoutScope === 'clip'
+            ? (selectedClipId || clips.find((c) => currentTime >= c.start && currentTime < c.start + c.duration)?.id || clips[0]?.id)
+            : null);
+
+      if (effectiveClipId) {
+        const targetClip = clips.find((c) => c.id === effectiveClipId);
+        if (targetClip) {
+          const ratio = targetClip.layoutOverride?.splitRatio || draft.layout.splitRatio || 0.5;
+          const newLayout = getLayoutTemplate(templateId, ratio);
+          targetClip.layoutOverride = newLayout;
+          return draft;
+        }
+      }
+
+      // If targeting all or single-clip project
+      const newLayout = getLayoutTemplate(templateId, draft.layout.splitRatio || 0.5);
+      draft.layout = newLayout;
+      if (hasMultipleClips && layoutScope === 'all') {
+        clips.forEach((c) => {
+          c.layoutOverride = JSON.parse(JSON.stringify(newLayout));
+        });
+      }
       return draft;
     });
-    const firstRegion = get().project?.layout.regions[0]?.id || null;
+
+    const activeClip = get().project?.tracks.find((t) => t.type === 'video')?.clips.find((c) => c.id === get().selectedClipId);
+    const firstRegion = (activeClip?.layoutOverride || get().project?.layout)?.regions[0]?.id || null;
     set({ selectedRegionId: firstRegion });
   },
 
   setSplitRatio: (ratio) => {
     const clamped = Math.max(0.2, Math.min(0.8, ratio));
     get().updateProject((draft) => {
-      draft.layout.splitRatio = clamped;
-      if (draft.layout.regions.length >= 2) {
-        draft.layout.regions[0].targetBounds.height = clamped;
-        draft.layout.regions[1].targetBounds.y = clamped;
-        draft.layout.regions[1].targetBounds.height = 1 - clamped;
+      const { selectedClipId, layoutScope, currentTime } = get();
+      const vTrack = draft.tracks.find((t) => t.type === 'video');
+      const clips = vTrack?.clips || [];
+      const hasMultipleClips = clips.length > 1;
 
-        const canvasW = draft.canvas.width;
-        const canvasH = draft.canvas.height;
-        const srcW = draft.source.probe?.width || 1920;
-        const srcH = draft.source.probe?.height || 1080;
-        const srcAspect = srcW / srcH;
+      const effectiveClipId = hasMultipleClips && layoutScope === 'clip'
+        ? (selectedClipId || clips.find((c) => currentTime >= c.start && currentTime < c.start + c.duration)?.id)
+        : null;
 
-        // Automatically update crop aspect ratios to eliminate stretching
-        for (let i = 0; i < 2; i++) {
-          const reg = draft.layout.regions[i];
-          const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
-          const currentW = reg.crop.width;
-          const centerX = reg.crop.x + currentW / 2;
-          const centerY = reg.crop.y + reg.crop.height / 2;
+      const updateLayoutRatio = (lay: any) => {
+        lay.splitRatio = clamped;
+        if (lay.regions && lay.regions.length >= 2) {
+          lay.regions[0].targetBounds.height = clamped;
+          lay.regions[1].targetBounds.y = clamped;
+          lay.regions[1].targetBounds.height = 1 - clamped;
 
-          const newH = (currentW * srcAspect) / targetAspect;
-          reg.crop.height = parseFloat(newH.toFixed(3));
-          reg.crop.y = parseFloat((centerY - newH / 2).toFixed(3));
+          const canvasW = draft.canvas.width;
+          const canvasH = draft.canvas.height;
+          const srcW = draft.source.probe?.width || 1920;
+          const srcH = draft.source.probe?.height || 1080;
+          const srcAspect = srcW / srcH;
+
+          // Automatically update crop aspect ratios to eliminate stretching
+          for (let i = 0; i < 2; i++) {
+            const reg = lay.regions[i];
+            const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
+            const currentW = reg.crop.width;
+            const centerX = reg.crop.x + currentW / 2;
+            const centerY = reg.crop.y + reg.crop.height / 2;
+
+            const newH = (currentW * srcAspect) / targetAspect;
+            reg.crop.height = parseFloat(newH.toFixed(3));
+            reg.crop.y = parseFloat((centerY - newH / 2).toFixed(3));
+          }
         }
+      };
+
+      if (effectiveClipId) {
+        const targetClip = clips.find((c) => c.id === effectiveClipId);
+        if (targetClip) {
+          if (!targetClip.layoutOverride) {
+            targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+          }
+          updateLayoutRatio(targetClip.layoutOverride);
+          return draft;
+        }
+      }
+
+      updateLayoutRatio(draft.layout);
+      if (hasMultipleClips && layoutScope === 'all') {
+        clips.forEach((c) => {
+          if (c.layoutOverride) updateLayoutRatio(c.layoutOverride);
+        });
       }
       return draft;
     });
@@ -219,33 +286,62 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setSecondaryMedia: (mediaPath, mediaType, probe) => {
     get().updateProject((draft) => {
-      draft.layout.secondaryMediaPath = mediaPath || undefined;
-      draft.layout.secondaryMediaType = mediaType || undefined;
-      draft.layout.secondaryMediaProbe = probe || undefined;
+      const { selectedClipId, layoutScope, currentTime } = get();
+      const vTrack = draft.tracks.find((t) => t.type === 'video');
+      const clips = vTrack?.clips || [];
+      const hasMultipleClips = clips.length > 1;
 
-      if (mediaPath) {
-        const secReg = draft.layout.regions.find((r) => r.sourceType === 'secondary_media');
-        if (secReg) {
-          const canvasW = draft.canvas.width;
-          const canvasH = draft.canvas.height;
-          const targetAspect = (canvasW * secReg.targetBounds.width) / Math.max(1, canvasH * secReg.targetBounds.height);
-          const sW = probe?.width || 1920;
-          const sH = probe?.height || 1080;
-          const sAspect = sW / sH;
+      const effectiveClipId = hasMultipleClips && layoutScope === 'clip'
+        ? (selectedClipId || clips.find((c) => currentTime >= c.start && currentTime < c.start + c.duration)?.id)
+        : null;
 
-          let w = 1.0;
-          let h = (w * sAspect) / targetAspect;
-          if (secReg.fit === 'cover' && h < 1.0) {
-            h = 1.0;
-            w = (h * targetAspect) / sAspect;
+      const updateLayoutSecondary = (lay: any) => {
+        lay.secondaryMediaPath = mediaPath || undefined;
+        lay.secondaryMediaType = mediaType || undefined;
+        lay.secondaryMediaProbe = probe || undefined;
+
+        if (mediaPath && lay.regions) {
+          const secReg = lay.regions.find((r: any) => r.sourceType === 'secondary_media');
+          if (secReg) {
+            const canvasW = draft.canvas.width;
+            const canvasH = draft.canvas.height;
+            const targetAspect = (canvasW * secReg.targetBounds.width) / Math.max(1, canvasH * secReg.targetBounds.height);
+            const sW = probe?.width || 1920;
+            const sH = probe?.height || 1080;
+            const sAspect = sW / sH;
+
+            let w = 1.0;
+            let h = (w * sAspect) / targetAspect;
+            if (secReg.fit === 'cover' && h < 1.0) {
+              h = 1.0;
+              w = (h * targetAspect) / sAspect;
+            }
+            secReg.crop = {
+              x: parseFloat(((1 - w) / 2).toFixed(3)),
+              y: parseFloat(((1 - h) / 2).toFixed(3)),
+              width: parseFloat(w.toFixed(3)),
+              height: parseFloat(h.toFixed(3)),
+            };
           }
-          secReg.crop = {
-            x: parseFloat(((1 - w) / 2).toFixed(3)),
-            y: parseFloat(((1 - h) / 2).toFixed(3)),
-            width: parseFloat(w.toFixed(3)),
-            height: parseFloat(h.toFixed(3)),
-          };
         }
+      };
+
+      if (effectiveClipId) {
+        const targetClip = clips.find((c) => c.id === effectiveClipId);
+        if (targetClip) {
+          if (!targetClip.layoutOverride) {
+            targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+          }
+          updateLayoutSecondary(targetClip.layoutOverride);
+          return draft;
+        }
+      }
+
+      updateLayoutSecondary(draft.layout);
+      if (hasMultipleClips && layoutScope === 'all') {
+        clips.forEach((c) => {
+          if (c.layoutOverride) updateLayoutSecondary(c.layoutOverride);
+        });
       }
       return draft;
     });
@@ -399,6 +495,36 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       return draft;
     }, true);
+  },
+
+  setTransition: (fromClipId, toClipId, type, duration = 0.5) => {
+    get().updateProject((draft) => {
+      if (!draft.transitions) draft.transitions = [];
+      draft.transitions = draft.transitions.filter(
+        (t) => !(t.fromClipId === fromClipId && t.toClipId === toClipId)
+      );
+
+      if (type !== 'cut') {
+        draft.transitions.push({
+          id: `tr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          fromClipId,
+          toClipId,
+          type,
+          duration: Math.max(0.1, Math.min(2.0, duration)),
+        });
+      }
+      return draft;
+    });
+  },
+
+  removeTransition: (fromClipId, toClipId) => {
+    get().updateProject((draft) => {
+      if (!draft.transitions) return draft;
+      draft.transitions = draft.transitions.filter(
+        (t) => !(t.fromClipId === fromClipId && t.toClipId === toClipId)
+      );
+      return draft;
+    });
   },
 
   updateSubtitleStyle: (style) => {
