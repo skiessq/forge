@@ -10,7 +10,7 @@ if (![System.IO.File]::Exists($projectJsonPath)) {
     exit 1
 }
 
-$projJson = [System.IO.File]::ReadAllText($projectJsonPath)
+$projJson = [System.IO.File]::ReadAllText($projectJsonPath, [System.Text.Encoding]::UTF8)
 $project = ConvertFrom-Json $projJson
 
 if (!$project.introHook -or !$project.introHook.enabled -or !$project.introHook.text) {
@@ -65,17 +65,53 @@ if (![System.IO.Directory]::Exists($emojisDir)) {
     [System.IO.Directory]::CreateDirectory($emojisDir) | Out-Null
 }
 
+function GetEmojiHex($emojiStr) {
+    $clean = $emojiStr -replace '[\uFE0E\uFE0F]', ''
+    $codePoints = @()
+    $i = 0
+    while ($i -lt $clean.Length) {
+        if ([char]::IsHighSurrogate($clean[$i]) -and ($i + 1 -lt $clean.Length) -and [char]::IsLowSurrogate($clean[$i+1])) {
+            $cp = [char]::ConvertToUtf32($clean, $i)
+            $codePoints += ("{0:x}" -f $cp)
+            $i += 2
+        } else {
+            $cp = [int][char]$clean[$i]
+            $codePoints += ("{0:x}" -f $cp)
+            $i += 1
+        }
+    }
+    return ($codePoints -join '-')
+}
+
 function GetEmojiImage($emojiChar) {
-    $cp = [char]::ConvertToUtf32($emojiChar, 0)
-    $hexCp = "{0:x}" -f $cp
-    $pngPath = "$emojisDir\$hexCp.png"
+    $hex = GetEmojiHex $emojiChar
+    if (!$hex) { return $null }
+
+    # 1. Exact match (e.g. 1f62e.png)
+    $pngPath = "$emojisDir\$hex.png"
     if ([System.IO.File]::Exists($pngPath)) {
         return [System.Windows.Media.Imaging.BitmapImage]::new([System.Uri]::new($pngPath))
     }
-    # Check fallback names
-    if ($emojiChar -eq '🦇' -and [System.IO.File]::Exists("$emojisDir\bat.png")) {
-        return [System.Windows.Media.Imaging.BitmapImage]::new([System.Uri]::new("$emojisDir\bat.png"))
+
+    # 2. First codepoint fallback
+    if ($hex.Contains('-')) {
+        $firstHex = $hex.Split('-')[0]
+        $firstPath = "$emojisDir\$firstHex.png"
+        if ([System.IO.File]::Exists($firstPath)) {
+            return [System.Windows.Media.Imaging.BitmapImage]::new([System.Uri]::new($firstPath))
+        }
     }
+
+    # 3. Dynamic Twemoji download from CDN
+    try {
+        $url = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/$hex.png"
+        $wc = [System.Net.WebClient]::new()
+        $wc.DownloadFile($url, $pngPath)
+        if ([System.IO.File]::Exists($pngPath)) {
+            return [System.Windows.Media.Imaging.BitmapImage]::new([System.Uri]::new($pngPath))
+        }
+    } catch {}
+
     return $null
 }
 
@@ -96,30 +132,29 @@ if ($rawText.Contains("`n")) {
     $lines = @($rawText.Trim())
 }
 
-# Parse each line into segments (Text or Emoji, with highlight flag)
+# Regex matching single emojis
+$singleEmoji = '(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u203C-\u32FF])[\uFE0E\uFE0F]?(?:\u200D(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u203C-\u32FF])[\uFE0E\uFE0F]?)*'
+$splitPattern = "($singleEmoji)"
+
 $parsedLines = @()
 foreach ($line in $lines) {
     $segments = @()
-    # Match surrogate pairs (emojis) or standard text
-    $emojiPattern = "([\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])"
-    $pattern = "((?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])+|[^\uD800-\uDBFF\u2600-\u27BF]+)"
-    $matches = [regex]::Matches($line, $pattern)
-    foreach ($m in $matches) {
-        $val = $m.Value
-        if ([regex]::IsMatch($val, $emojiPattern)) {
-            $segments += @{ type = 'emoji'; value = $val }
+    $parts = [regex]::Split($line, $splitPattern)
+    foreach ($part in $parts) {
+        if ([string]::IsNullOrEmpty($part)) { continue }
+        if ([regex]::IsMatch($part, "^$singleEmoji$")) {
+            $segments += @{ type = 'emoji'; value = $part }
         } else {
-            # Check for asterisk highlights: *word*
-            if ($val.Contains('*')) {
-                $parts = $val.Split('*')
-                for ($p = 0; $p -lt $parts.Length; $p++) {
-                    if ($parts[$p].Length -gt 0) {
+            if ($part.Contains('*')) {
+                $subParts = $part.Split('*')
+                for ($p = 0; $p -lt $subParts.Length; $p++) {
+                    if ($subParts[$p].Length -gt 0) {
                         $isHigh = ($p % 2 -eq 1)
-                        $segments += @{ type = 'text'; value = $parts[$p].ToUpper(); isHighlight = $isHigh }
+                        $segments += @{ type = 'text'; value = $subParts[$p].ToUpper(); isHighlight = $isHigh }
                     }
                 }
             } else {
-                $segments += @{ type = 'text'; value = $val.ToUpper(); isHighlight = $false }
+                $segments += @{ type = 'text'; value = $part.ToUpper(); isHighlight = $false }
             }
         }
     }
@@ -179,7 +214,6 @@ $visual = [System.Windows.Media.DrawingVisual]::new()
 $dc = $visual.RenderOpen()
 
 $currentY = 20.0
-
 $centerNormX = if ($hook.positionX -ne $null) { [double]$hook.positionX } else { 0.5 }
 
 foreach ($lm in $lineMetrics) {
@@ -218,6 +252,20 @@ foreach ($lm in $lineMetrics) {
             $emojiY = $currentY + ($fontSize - $emojiSize) / 2.0 - 4.0
             if ($seg.image) {
                 $dc.DrawImage($seg.image, [System.Windows.Rect]::new($curX, $emojiY, $emojiSize, $emojiSize))
+            } else {
+                # Fallback to Segoe UI Emoji formatted text if no image found
+                $emojiFont = [System.Windows.Media.FontFamily]::new("Segoe UI Emoji")
+                $emojiTypeface = [System.Windows.Media.Typeface]::new($emojiFont, [System.Windows.FontStyles]::Normal, [System.Windows.FontWeights]::Normal, [System.Windows.FontStretches]::Normal)
+                $ftEmoji = [System.Windows.Media.FormattedText]::new(
+                    $seg.value,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    [System.Windows.FlowDirection]::LeftToRight,
+                    $emojiTypeface,
+                    $fontSize * 0.95,
+                    [System.Windows.Media.Brushes]::White,
+                    1.0
+                )
+                $dc.DrawText($ftEmoji, [System.Windows.Point]::new($curX, $currentY))
             }
             $curX += $seg.width
         }

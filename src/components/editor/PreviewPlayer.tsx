@@ -932,7 +932,7 @@ export default function PreviewPlayer() {
     return isLeaving ? `anim-hook-exit-${t}` : `anim-hook-${t}`;
   };
 
-  // Helper for rendering Intro Hook Headline with optional highlight punch and multi-line control
+  // Helper for rendering Intro Hook Headline with optional highlight punch, emoji isolation, and multi-line control
   const renderHookText = (
     text: string,
     defaultColor: string,
@@ -940,26 +940,63 @@ export default function PreviewPlayer() {
     wordsPerLine?: number
   ) => {
     const lines = formatHookLines(text, wordsPerLine);
+    const EMOJI_REGEX = /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*[\uFE0E\uFE0F]?)/u;
+    const IS_EMOJI = /^\p{Extended_Pictographic}/u;
+
+    const renderTextAndEmojis = (str: string, color: string, keyPrefix: string) => {
+      const parts = str.split(EMOJI_REGEX);
+      return parts.map((part, i) => {
+        if (!part) return null;
+        if (IS_EMOJI.test(part)) {
+          return (
+            <span
+              key={`${keyPrefix}-emoji-${i}`}
+              style={{
+                display: 'inline-block',
+                WebkitTextStroke: '0px transparent',
+                textShadow: 'none',
+                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.85))',
+                fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
+                textTransform: 'none',
+                verticalAlign: 'baseline',
+                margin: '0 0.12em',
+              }}
+            >
+              {part}
+            </span>
+          );
+        }
+        return (
+          <span key={`${keyPrefix}-txt-${i}`} style={{ color }}>
+            {part}
+          </span>
+        );
+      });
+    };
 
     return lines.map((line, lineIdx) => {
-      let content: React.ReactNode = line;
+      let content: React.ReactNode = null;
       if (highlightColor && highlightColor !== defaultColor && line.includes('*')) {
         const parts = line.split('*');
         content = parts.map((part, i) => (
-          <span key={i} style={{ color: i % 2 === 1 ? highlightColor : defaultColor }}>
-            {part}
-          </span>
+          <React.Fragment key={i}>
+            {renderTextAndEmojis(part, i % 2 === 1 ? highlightColor : defaultColor, `part-${i}`)}
+          </React.Fragment>
         ));
       } else if (highlightColor && highlightColor !== defaultColor && !text.includes('*') && lineIdx === 0) {
         const words = line.split(' ');
         if (words.length > 1) {
           content = (
             <>
-              <span style={{ color: highlightColor }}>{words[0]} </span>
-              <span>{words.slice(1).join(' ')}</span>
+              {renderTextAndEmojis(words[0] + ' ', highlightColor, 'first-w')}
+              {renderTextAndEmojis(words.slice(1).join(' '), defaultColor, 'rest-w')}
             </>
           );
+        } else {
+          content = renderTextAndEmojis(line, defaultColor, `l-${lineIdx}`);
         }
+      } else {
+        content = renderTextAndEmojis(line, defaultColor, `l-${lineIdx}`);
       }
 
       return (
