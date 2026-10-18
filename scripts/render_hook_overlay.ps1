@@ -180,8 +180,10 @@ $dc = $visual.RenderOpen()
 
 $currentY = 20.0
 
+$centerNormX = if ($hook.positionX -ne $null) { [double]$hook.positionX } else { 0.5 }
+
 foreach ($lm in $lineMetrics) {
-    $startX = ($canvasW - $lm.width) / 2.0
+    $startX = ($canvasW * $centerNormX) - ($lm.width / 2.0)
     $curX = $startX
 
     foreach ($seg in $lm.segments) {

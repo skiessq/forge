@@ -38,6 +38,15 @@ export function buildFFmpegExportCommand(
   const inputs: string[] = [];
   const filterChains: string[] = [];
 
+  // Helper to accurately get the 0-based input index of the next input added to inputs
+  function getNextInputIndex(): number {
+    let count = 0;
+    for (let i = 0; i < inputs.length; i++) {
+      if (inputs[i] === '-i') count++;
+    }
+    return count;
+  }
+
   // Primary source input (index 0)
   inputs.push('-i', project.source.path);
 
@@ -49,7 +58,7 @@ export function buildFFmpegExportCommand(
     project.layout.secondaryMediaPath;
 
   if (usesSecondary && project.layout.secondaryMediaPath) {
-    secondaryInputIndex = 1;
+    secondaryInputIndex = getNextInputIndex();
     if (project.layout.secondaryMediaType === 'video') {
       // Loop secondary video if shorter than clip
       inputs.push('-stream_loop', '-1', '-i', project.layout.secondaryMediaPath);
@@ -337,7 +346,7 @@ export function buildFFmpegExportCommand(
 
     if (fs.existsSync(hookOverlayPath)) {
       hookOverlaid = true;
-      const hookInputIndex = inputs.length / 2;
+      const hookInputIndex = getNextInputIndex();
       inputs.push('-loop', '1', '-i', hookOverlayPath);
 
       // Read PNG dimensions
@@ -433,7 +442,7 @@ export function buildFFmpegExportCommand(
 
   let bgMusicInputIdx = -1;
   if (hasBgMusic && audioSettings.backgroundMusicPath) {
-    bgMusicInputIdx = inputs.length / 2; // current count of inputs
+    bgMusicInputIdx = getNextInputIndex();
     inputs.push('-stream_loop', '-1', '-i', audioSettings.backgroundMusicPath);
   }
 
