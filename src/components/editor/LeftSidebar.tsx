@@ -718,6 +718,7 @@ export default function LeftSidebar() {
                       }}
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white font-medium"
                     >
+                      <option value="static">📌 Static (No Animation / Clean Hold)</option>
                       <option value="bounce_drop">💥 Bounce Drop (Viral Pop 🔥)</option>
                       <option value="zoom_pop">⚡ Zoom Pop (Impact Punch)</option>
                       <option value="slide_down">⬇ Slide Down (Smooth In)</option>

@@ -189,7 +189,7 @@ export interface ExportSettings {
   outputFileName: string;
 }
 
-export type IntroHookTransition = 'pop_in' | 'bounce_drop' | 'zoom_pop' | 'slide_down' | 'glitch' | 'fade_zoom';
+export type IntroHookTransition = 'static' | 'pop_in' | 'bounce_drop' | 'zoom_pop' | 'slide_down' | 'glitch' | 'fade_zoom';
 
 export interface IntroHookConfig {
   enabled: boolean;

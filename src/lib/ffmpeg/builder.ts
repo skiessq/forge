@@ -360,25 +360,31 @@ export function buildFFmpegExportCommand(
       const targetY = Math.max(20, Math.round(canvasHeight * (project.introHook.positionY ?? 0.22) - hookHeight / 2));
       const tr = project.introHook.transition || 'bounce_drop';
 
+      const isStatic = tr === 'static';
       let yExpr = `${targetY}`;
-      if (tr === 'bounce_drop') {
+      if (!isStatic && tr === 'bounce_drop') {
         const startY = targetY - 140;
         yExpr = `if(lte(t,0.4),${startY}+140*(t/0.4),${targetY})`;
-      } else if (tr === 'slide_down') {
+      } else if (!isStatic && tr === 'slide_down') {
         const startY = targetY - 120;
         yExpr = `if(lte(t,0.35),${startY}+120*(t/0.35),${targetY})`;
       }
 
-      const fadeInDur = 0.15;
-      const fadeOutDur = 0.35;
-      let fadeFilter = `fade=t=in:st=0:d=${fadeInDur}:alpha=1`;
-      if (!project.introHook.stayWholeVideo && hookDur > fadeInDur + fadeOutDur) {
+      const fadeInDur = isStatic ? 0 : 0.15;
+      const fadeOutDur = isStatic ? 0.15 : 0.35;
+      const fadeParts: string[] = [];
+      if (!isStatic && fadeInDur > 0) {
+        fadeParts.push(`fade=t=in:st=0:d=${fadeInDur}:alpha=1`);
+      }
+      if (!project.introHook.stayWholeVideo && hookDur > fadeOutDur) {
         const fadeOutSt = Math.max(0, hookDur - fadeOutDur).toFixed(2);
-        fadeFilter += `,fade=t=out:st=${fadeOutSt}:d=${fadeOutDur}:alpha=1`;
+        fadeParts.push(`fade=t=out:st=${fadeOutSt}:d=${fadeOutDur}:alpha=1`);
       }
 
+      const fadeFilter = fadeParts.length > 0 ? `,${fadeParts.join(',')}` : '';
+
       filterChains.push(
-        `[${hookInputIndex}:v]format=rgba,${fadeFilter}[v_hook_alpha]`
+        `[${hookInputIndex}:v]format=rgba${fadeFilter}[v_hook_alpha]`
       );
       filterChains.push(
         `${finalVideoStream}[v_hook_alpha]overlay=x=0:y='${yExpr}':shortest=1:enable='between(t,0,${hookDur.toFixed(2)})'[v_hooked]`

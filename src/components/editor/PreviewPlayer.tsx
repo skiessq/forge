@@ -926,6 +926,9 @@ export default function PreviewPlayer() {
   // Helper for Intro Hook Transition Classes (Entrance & Exit)
   const getHookTransitionClass = (transition?: string, isLeaving = false) => {
     const t = transition || 'bounce_drop';
+    if (t === 'static') {
+      return isLeaving ? 'anim-hook-exit-static' : 'anim-hook-static';
+    }
     return isLeaving ? `anim-hook-exit-${t}` : `anim-hook-${t}`;
   };
 
@@ -1233,7 +1236,7 @@ export default function PreviewPlayer() {
             const projectDur = videoTrack?.clips?.reduce((acc, c) => acc + c.duration, 0) || project.source.probe?.duration || 30;
             const hookDur = project.introHook.stayWholeVideo ? projectDur : (project.introHook.duration || 2.5);
             if (currentTime > hookDur) return null;
-            const isLeaving = currentTime >= hookDur - 0.38;
+            const isLeaving = !project.introHook.stayWholeVideo && currentTime >= hookDur - (project.introHook.transition === 'static' ? 0.2 : 0.38);
             return (
               <div
                 key={isLeaving ? 'hook-exit' : 'hook-enter'}

@@ -208,7 +208,11 @@ export function generateAssSubtitles(project: Project, options?: { includeIntroH
 
     let animTag = `{\\an5\\pos(${posX},${posY})\\fad(150,350)}`;
     const tr = project.introHook.transition || 'bounce_drop';
-    if (tr === 'bounce_drop') {
+    if (tr === 'static') {
+      animTag = project.introHook.stayWholeVideo
+        ? `{\\an5\\pos(${posX},${posY})}`
+        : `{\\an5\\pos(${posX},${posY})\\fad(0,200)}`;
+    } else if (tr === 'bounce_drop') {
       animTag = `{\\an5\\move(${posX},${posY - 140},${posX},${posY},0,400)\\fad(150,350)}`;
     } else if (tr === 'slide_down') {
       animTag = `{\\an5\\move(${posX},${posY - 120},${posX},${posY},0,350)\\fad(150,350)}`;
