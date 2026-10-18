@@ -225,7 +225,7 @@ export default function AutoSplitModal({ isOpen, onClose }: Props) {
                               <input
                                 type="number"
                                 step="0.5"
-                                value={parseFloat(c.start.toFixed(1))}
+                                value={parseFloat((c.start ?? 0).toFixed(1))}
                                 onChange={(e) =>
                                   updateCandidate(c.id, 'start', parseFloat(e.target.value) || 0)
                                 }
@@ -239,7 +239,7 @@ export default function AutoSplitModal({ isOpen, onClose }: Props) {
                               <input
                                 type="number"
                                 step="0.5"
-                                value={parseFloat(c.end.toFixed(1))}
+                                value={parseFloat((c.end ?? 0).toFixed(1))}
                                 onChange={(e) =>
                                   updateCandidate(c.id, 'end', parseFloat(e.target.value) || 0)
                                 }
@@ -249,7 +249,7 @@ export default function AutoSplitModal({ isOpen, onClose }: Props) {
                             </div>
 
                             <span className="font-mono text-blue-400 font-bold px-1">
-                              {c.duration.toFixed(1)}s
+                              {(c.duration ?? 0).toFixed(1)}s
                             </span>
                           </div>
                         </div>

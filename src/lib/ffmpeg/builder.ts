@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { Project, ExportSettings, LayoutRegion } from '../types';
 import { formatHookLines } from '../utils/hookText';
+import { probeMedia } from './probe';
 
 export interface FFmpegCommandPlan {
   command: string;
@@ -71,23 +72,27 @@ export function buildFFmpegExportCommand(
     reg: { crop: { x: number; y: number; width: number; height: number } },
     targetW: number,
     targetH: number,
-    outputStream: string
+    outputStream: string,
+    customW?: number,
+    customH?: number
   ): string {
+    const inputW = customW || srcW;
+    const inputH = customH || srcH;
     const targetAspect = targetW / targetH;
-    const cropW = makeEven(srcW * reg.crop.width);
+    const cropW = makeEven(inputW * (reg.crop?.width ?? 1));
     // Strictly lock source crop aspect ratio to target box to guarantee ZERO stretching
     const cropH = makeEven(cropW / targetAspect);
-    const cropX = Math.round(srcW * reg.crop.x);
-    const cropY = Math.round(srcH * reg.crop.y);
+    const cropX = Math.round(inputW * (reg.crop?.x ?? 0));
+    const cropY = Math.round(inputH * (reg.crop?.y ?? 0));
 
-    const needsPadding = cropX < 0 || cropY < 0 || cropX + cropW > srcW || cropY + cropH > srcH;
+    const needsPadding = cropX < 0 || cropY < 0 || cropX + cropW > inputW || cropY + cropH > inputH;
 
     if (needsPadding) {
-      const padW = srcW * 3;
-      const padH = srcH * 3;
-      const paddedX = cropX + srcW;
-      const paddedY = cropY + srcH;
-      return `${inputStream}pad=${padW}:${padH}:${srcW}:${srcH}:color=black,crop=${cropW}:${cropH}:${paddedX}:${paddedY},scale=${targetW}:${targetH},setsar=1${outputStream}`;
+      const padW = inputW * 3;
+      const padH = inputH * 3;
+      const paddedX = cropX + inputW;
+      const paddedY = cropY + inputH;
+      return `${inputStream}pad=${padW}:${padH}:${inputW}:${inputH}:color=black,crop=${cropW}:${cropH}:${paddedX}:${paddedY},scale=${targetW}:${targetH},setsar=1${outputStream}`;
     }
 
     return `${inputStream}crop=${cropW}:${cropH}:${cropX}:${cropY},scale=${targetW}:${targetH},setsar=1${outputStream}`;
@@ -146,12 +151,33 @@ export function buildFFmpegExportCommand(
         const mediaH = isMediaTop ? topH : bottomH;
         const gameH = isMediaTop ? bottomH : topH;
         const gameReg = isMediaTop ? layout.regions[1] : layout.regions[0];
+        const mediaReg = isMediaTop ? layout.regions[0] : layout.regions[1];
 
         chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, gameReg, canvasWidth, gameH, `[v_game_${suffix}]`));
 
         if (secondaryInputIndex >= 0) {
+          let secW = layout.secondaryMediaProbe?.width;
+          let secH = layout.secondaryMediaProbe?.height;
+          if ((!secW || !secH) && project.layout.secondaryMediaPath) {
+            try {
+              const p = probeMedia(project.layout.secondaryMediaPath);
+              secW = p.width;
+              secH = p.height;
+            } catch (err) {
+              secW = 1920;
+              secH = 1080;
+            }
+          }
           chains.push(
-            `[${secondaryInputIndex}:v]scale=${canvasWidth}:${mediaH}:force_original_aspect_ratio=decrease,pad=${canvasWidth}:${mediaH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v_media_${suffix}]`
+            buildCropScaleFilter(
+              `[${secondaryInputIndex}:v]`,
+              mediaReg,
+              canvasWidth,
+              mediaH,
+              `[v_media_${suffix}]`,
+              secW || 1920,
+              secH || 1080
+            )
           );
         } else {
           chains.push(`color=c=0x1E293B:s=${canvasWidth}x${mediaH}:duration=10[v_media_${suffix}]`);
@@ -226,7 +252,7 @@ export function buildFFmpegExportCommand(
       const rawClip = `[raw_clip_${idx}]`;
       const renderedClip = `[rendered_clip_${idx}]`;
       filterChains.push(
-        `[0:v]trim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},setpts=PTS-STARTPTS${rawClip}`
+        `[0:v]trim=start=${(c.sourceStart ?? c.start ?? 0).toFixed(2)}:duration=${(c.duration ?? 0).toFixed(2)},setpts=PTS-STARTPTS${rawClip}`
       );
       const clipLayout = c.layoutOverride || project.layout;
       const chains = buildLayoutChains(rawClip, clipLayout, renderedClip, `seg_${idx}`);
@@ -238,9 +264,9 @@ export function buildFFmpegExportCommand(
   } else {
     // Single clip
     let baseClipInput = '[0:v]';
-    if (clips.length === 1 && (clips[0].sourceStart > 0 || clips[0].duration < (project.source.probe?.duration || 10) - 0.1)) {
+    if (clips.length === 1 && ((clips[0].sourceStart ?? clips[0].start ?? 0) > 0 || (clips[0].duration ?? 0) < (project.source.probe?.duration || 10) - 0.1)) {
       filterChains.push(
-        `[0:v]trim=start=${clips[0].sourceStart.toFixed(2)}:duration=${clips[0].duration.toFixed(2)},setpts=PTS-STARTPTS[v_trimmed]`
+        `[0:v]trim=start=${(clips[0].sourceStart ?? clips[0].start ?? 0).toFixed(2)}:duration=${(clips[0].duration ?? 0).toFixed(2)},setpts=PTS-STARTPTS[v_trimmed]`
       );
       baseClipInput = '[v_trimmed]';
     }
@@ -325,7 +351,7 @@ export function buildFFmpegExportCommand(
       } catch {}
 
       const totalDuration = clips.length > 0
-        ? clips.reduce((acc: number, c: any) => acc + c.duration, 0)
+        ? clips.reduce((acc: number, c: any) => acc + (c.duration || 0), 0)
         : (project.source.probe?.duration || 30);
       const hookDur = project.introHook.stayWholeVideo
         ? totalDuration
@@ -418,7 +444,7 @@ export function buildFFmpegExportCommand(
     if (isTrimmed) {
       const c = clips[0];
       filterChains.push(
-        `[0:a:${audioTrackIdx}]atrim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},asetpts=PTS-STARTPTS[a_trimmed]`
+        `[0:a:${audioTrackIdx}]atrim=start=${(c.sourceStart ?? c.start ?? 0).toFixed(2)}:duration=${(c.duration ?? 0).toFixed(2)},asetpts=PTS-STARTPTS[a_trimmed]`
       );
       currentAudioNode = `[a_trimmed]`;
     } else if (isMultiClip) {
@@ -426,7 +452,7 @@ export function buildFFmpegExportCommand(
       clips.forEach((c, idx) => {
         const segStream = `[seg_a_${idx}]`;
         filterChains.push(
-          `[0:a:${audioTrackIdx}]atrim=start=${c.sourceStart.toFixed(2)}:duration=${c.duration.toFixed(2)},asetpts=PTS-STARTPTS${segStream}`
+          `[0:a:${audioTrackIdx}]atrim=start=${(c.sourceStart ?? c.start ?? 0).toFixed(2)}:duration=${(c.duration ?? 0).toFixed(2)},asetpts=PTS-STARTPTS${segStream}`
         );
         segStreams.push(segStream);
       });
@@ -468,11 +494,11 @@ export function buildFFmpegExportCommand(
   }
 
   const outputDuration = clips.length > 0
-    ? clips.reduce((acc, c) => acc + c.duration, 0)
+    ? clips.reduce((acc, c) => acc + (c.duration || 0), 0)
     : (project.source.probe?.duration || 10);
 
   args.push(
-    '-t', outputDuration.toFixed(2),
+    '-t', (outputDuration || 10).toFixed(2),
     '-c:v', videoEncoder,
     ...encoderArgs,
     '-r', String(fps),

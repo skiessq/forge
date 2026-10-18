@@ -198,7 +198,7 @@ export default function SilenceRemovalModal({ isOpen, onClose }: Props) {
                         className="rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0"
                       />
                       <span className="font-mono text-slate-200">
-                        {s.start.toFixed(2)}s - {s.end.toFixed(2)}s ({s.duration.toFixed(2)}s silence)
+                        {(s.start ?? 0).toFixed(2)}s - {(s.end ?? 0).toFixed(2)}s ({(s.duration ?? 0).toFixed(2)}s silence)
                       </span>
                     </label>
 

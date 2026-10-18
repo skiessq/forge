@@ -37,7 +37,7 @@ export async function GET() {
 
         if (!sourceExists && clip.sourceStart > 0 && fs.existsSync(project.source?.path)) {
           console.log(`Cutting media for ${project.id}: [${clip.sourceStart}s -> +${clip.duration}s]...`);
-          const cutCmd = `"${ffmpegExe}" -y -ss ${clip.sourceStart.toFixed(3)} -t ${clip.duration.toFixed(3)} -i "${project.source.path}" -c:v libx264 -preset veryfast -crf 18 -c:a aac -b:a 192k "${cutSourcePath}"`;
+          const cutCmd = `"${ffmpegExe}" -y -ss ${(clip.sourceStart ?? 0).toFixed(3)} -t ${(clip.duration ?? 0).toFixed(3)} -i "${project.source.path}" -c:v libx264 -preset veryfast -crf 18 -c:a aac -b:a 192k "${cutSourcePath}"`;
           execSync(cutCmd, { stdio: 'pipe' });
         }
 

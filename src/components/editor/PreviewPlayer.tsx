@@ -14,6 +14,7 @@ import {
   GripHorizontal,
   PanelBottomClose,
   PanelBottomOpen,
+  UploadCloud,
 } from 'lucide-react';
 import SafeZoneGuide from './SafeZoneGuide';
 import { formatHookLines } from '@/lib/utils/hookText';
@@ -89,20 +90,50 @@ export default function PreviewPlayer() {
     zoomRegion,
     updateSubtitleStyle,
     updateIntroHook,
+    setSecondaryMedia,
   } = useEditorStore();
 
   const primaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const secondaryVideoRef = useRef<HTMLVideoElement | null>(null);
+  const secondaryImageRef = useRef<HTMLImageElement | null>(null);
+  const secondaryFileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [isMuted, setIsMuted] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploadingSecondary, setIsUploadingSecondary] = useState(false);
   const [dragMode, setDragMode] = useState<'region' | 'subtitle' | 'hook' | null>(null);
   const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuideInfo[]>([]);
   const dragStartRef = useRef<DragState | null>(null);
   const isSelfUpdatingRef = useRef(false);
   const rafMoveRef = useRef<number | null>(null);
+
+  const handleSecondaryUpload = async (file: File) => {
+    if (!file || !project) return;
+    setIsUploadingSecondary(true);
+    try {
+      const formData = new FormData();
+      formData.append('projectId', project.id);
+      formData.append('file', file);
+      const res = await fetch('/api/media/upload-secondary', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to upload secondary media');
+      }
+      setSecondaryMedia(data.secondaryMediaPath, data.secondaryMediaType, data.secondaryMediaProbe);
+    } catch (err) {
+      console.error('Secondary media upload error:', err);
+    } finally {
+      setIsUploadingSecondary(false);
+      if (secondaryFileInputRef.current) {
+        secondaryFileInputRef.current.value = '';
+      }
+    }
+  };
 
   const videoTrack = project?.tracks?.find((t) => t.type === 'video');
   const activeClip = videoTrack?.clips?.find(
@@ -264,10 +295,75 @@ export default function PreviewPlayer() {
             ctx.fillStyle = '#090D16';
             ctx.fillRect(dx, dy, dw, dh);
 
-            if (region.sourceType === 'secondary_media' && secondaryVideoRef.current) {
-              const v2 = secondaryVideoRef.current;
-              if (v2.readyState >= 2) {
-                ctx.drawImage(v2, dx, dy, dw, dh);
+            if (region.sourceType === 'secondary_media') {
+              let sourceElement: CanvasImageSource | null = null;
+              let sW = 1920;
+              let sH = 1080;
+
+              if (
+                secondaryVideoRef.current &&
+                (project.layout.secondaryMediaType === 'video' || !project.layout.secondaryMediaType)
+              ) {
+                const v2 = secondaryVideoRef.current;
+                if (v2.readyState >= 2 && v2.videoWidth > 0) {
+                  sourceElement = v2;
+                  sW = v2.videoWidth;
+                  sH = v2.videoHeight;
+                }
+              } else if (
+                secondaryImageRef.current &&
+                (project.layout.secondaryMediaType === 'image' || project.layout.secondaryMediaType === 'gif')
+              ) {
+                const img = secondaryImageRef.current;
+                if (img.complete && img.naturalWidth > 0) {
+                  sourceElement = img;
+                  sW = img.naturalWidth;
+                  sH = img.naturalHeight;
+                }
+              }
+
+              if (sourceElement) {
+                // Secondary media cropped, zoomed, and positioned with LOCKED aspect ratio (ZERO STRETCHING)
+                const targetAspect = dw / dh;
+                const crop = region.crop || { x: 0, y: 0, width: 1, height: 1 };
+                const sw = Math.max(10, crop.width * sW);
+                const sh = sw / targetAspect;
+                const sx = crop.x * sW;
+                const sy = crop.y * sH;
+
+                const visibleSx = Math.max(0, Math.min(sW, sx));
+                const visibleSy = Math.max(0, Math.min(sH, sy));
+                const visibleEx = Math.max(0, Math.min(sW, sx + sw));
+                const visibleEy = Math.max(0, Math.min(sH, sy + sh));
+                const visibleSw = visibleEx - visibleSx;
+                const visibleSh = visibleEy - visibleSy;
+
+                if (visibleSw > 0 && visibleSh > 0 && sw > 0 && sh > 0) {
+                  const scale = dw / sw;
+                  const renderDx = dx + (visibleSx - sx) * scale;
+                  const renderDy = dy + (visibleSy - sy) * scale;
+                  const renderDw = visibleSw * scale;
+                  const renderDh = visibleSh * scale;
+
+                  ctx.drawImage(sourceElement, visibleSx, visibleSy, visibleSw, visibleSh, renderDx, renderDy, renderDw, renderDh);
+                }
+              } else if (!project.layout.secondaryMediaPath) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.35)';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([10, 8]);
+                ctx.strokeRect(dx + 16, dy + 16, dw - 32, dh - 32);
+
+                ctx.fillStyle = 'rgba(241, 245, 249, 0.9)';
+                ctx.font = 'bold 24px Montserrat, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('📁 Secondary Media Slot', dx + dw / 2, dy + dh / 2 - 16);
+
+                ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+                ctx.font = '15px Montserrat, sans-serif';
+                ctx.fillText('Click or drop media to attach', dx + dw / 2, dy + dh / 2 + 16);
+                ctx.restore();
               }
             } else {
               // Primary video cropped and scaled with locked aspect ratio (ZERO STRETCHING)
@@ -453,11 +549,29 @@ export default function PreviewPlayer() {
     if (clickedRegion) {
       setSelectedRegionId(clickedRegion.id);
       setSelectedOverlayType(null);
+
+      // If clicked region is secondary_media slot and no media is uploaded yet
+      if (clickedRegion.sourceType === 'secondary_media' && !project.layout.secondaryMediaPath) {
+        secondaryFileInputRef.current?.click();
+        return;
+      }
+
       setIsDragging(true);
       setDragMode('region');
 
-      const vW = primaryVideoRef.current?.videoWidth || 1920;
-      const vH = primaryVideoRef.current?.videoHeight || 1080;
+      const isSec = clickedRegion.sourceType === 'secondary_media';
+      const secW =
+        secondaryVideoRef.current?.videoWidth ||
+        secondaryImageRef.current?.naturalWidth ||
+        project.layout.secondaryMediaProbe?.width ||
+        1920;
+      const secH =
+        secondaryVideoRef.current?.videoHeight ||
+        secondaryImageRef.current?.naturalHeight ||
+        project.layout.secondaryMediaProbe?.height ||
+        1080;
+      const vW = isSec ? secW : (primaryVideoRef.current?.videoWidth || 1920);
+      const vH = isSec ? secH : (primaryVideoRef.current?.videoHeight || 1080);
       const regionWidthPx = rect.width * clickedRegion.targetBounds.width;
       const regionHeightPx = rect.height * clickedRegion.targetBounds.height;
       const targetAspect = regionWidthPx / Math.max(1, regionHeightPx);
@@ -878,6 +992,13 @@ export default function PreviewPlayer() {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+              handleSecondaryUpload(e.dataTransfer.files[0]);
+            }
+          }}
           className={`relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800/80 ${
             ratioClasses[project.canvas.aspectRatio] || `aspect-[9/16] ${dynamicMaxHeight}`
           } w-auto h-full flex flex-col cursor-grab active:cursor-grabbing transition-all duration-300`}
@@ -894,7 +1015,7 @@ export default function PreviewPlayer() {
           />
 
           {/* Secondary media video (if any) */}
-          {secondarySrc && project.layout.secondaryMediaType === 'video' && (
+          {secondarySrc && (project.layout.secondaryMediaType === 'video' || !project.layout.secondaryMediaType) && (
             <video
               ref={secondaryVideoRef}
               src={secondarySrc}
@@ -905,6 +1026,27 @@ export default function PreviewPlayer() {
             />
           )}
 
+          {/* Secondary media image / GIF (if any) */}
+          {secondarySrc && (project.layout.secondaryMediaType === 'image' || project.layout.secondaryMediaType === 'gif') && (
+            <img
+              ref={secondaryImageRef}
+              src={secondarySrc}
+              alt="Secondary Media"
+              className="hidden"
+            />
+          )}
+
+          {/* Hidden File Input for quick preview upload */}
+          <input
+            ref={secondaryFileInputRef}
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime,video/x-matroska,image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.[0]) handleSecondaryUpload(e.target.files[0]);
+            }}
+          />
+
           {/* High-Performance Hardware-Accelerated 60 FPS Canvas */}
           <canvas
             ref={canvasRef}
@@ -913,23 +1055,64 @@ export default function PreviewPlayer() {
             className="w-full h-full object-contain pointer-events-none"
           />
 
-          {/* Region Label Indicators */}
+          {/* Region Label Indicators & Interactive Secondary Media Drop/Upload Box */}
           <div className="absolute inset-0 pointer-events-none">
             {effectiveLayout.regions.map((region) => (
-              <div
-                key={region.id}
-                style={{
-                  position: 'absolute',
-                  left: `${region.targetBounds.x * 100}%`,
-                  top: `${region.targetBounds.y * 100}%`,
-                }}
-                className="m-2.5 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur border border-white/10 text-[10px] text-white/90 font-medium flex items-center gap-1.5 shadow"
-              >
-                <span>{region.label}</span>
-                {region.id === selectedRegionId && !selectedOverlayType && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              <React.Fragment key={region.id}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${region.targetBounds.x * 100}%`,
+                    top: `${region.targetBounds.y * 100}%`,
+                  }}
+                  className="m-2.5 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur border border-white/10 text-[10px] text-white/90 font-medium flex items-center gap-1.5 shadow"
+                >
+                  <span>{region.label}</span>
+                  {region.id === selectedRegionId && !selectedOverlayType && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  )}
+                </div>
+
+                {/* If secondary media slot is empty, show interactive upload button right in the preview */}
+                {region.sourceType === 'secondary_media' && !project.layout.secondaryMediaPath && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${region.targetBounds.x * 100}%`,
+                      top: `${region.targetBounds.y * 100}%`,
+                      width: `${region.targetBounds.width * 100}%`,
+                      height: `${region.targetBounds.height * 100}%`,
+                    }}
+                    className="flex flex-col items-center justify-center p-4 pointer-events-auto"
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedRegionId(region.id);
+                        secondaryFileInputRef.current?.click();
+                      }}
+                      disabled={isUploadingSecondary}
+                      className="px-4 py-2.5 rounded-xl bg-blue-600/90 hover:bg-blue-500 text-white font-semibold text-xs shadow-xl shadow-blue-600/30 backdrop-blur border border-blue-400/30 flex items-center gap-2 transition hover:scale-105 active:scale-95 group cursor-pointer"
+                    >
+                      {isUploadingSecondary ? (
+                        <>
+                          <RotateCcw className="w-4 h-4 animate-spin" />
+                          <span>Uploading Media...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                          <span>Upload Media (Video / GIF / Image)</span>
+                        </>
+                      )}
+                    </button>
+                    <span className="text-[10px] text-slate-400 mt-2 bg-black/60 px-2.5 py-1 rounded backdrop-blur">
+                      or drag & drop file anywhere here
+                    </span>
+                  </div>
                 )}
-              </div>
+              </React.Fragment>
             ))}
           </div>
 
@@ -1418,9 +1601,9 @@ export default function PreviewPlayer() {
 
         {/* Timecodes */}
         <div className="font-mono text-xs text-slate-300 flex items-center gap-1.5">
-          <span className="text-white font-bold">{currentTime.toFixed(2)}s</span>
+          <span className="text-white font-bold">{(currentTime ?? 0).toFixed(2)}s</span>
           <span className="text-slate-600">/</span>
-          <span className="text-slate-400">{duration.toFixed(2)}s</span>
+          <span className="text-slate-400">{(duration ?? 0).toFixed(2)}s</span>
         </div>
 
         {/* Snapping, Timeline Toggle & Audio Controls */}

@@ -53,9 +53,9 @@ export async function POST(req: NextRequest) {
         let trimArgs = '';
         if (
           clip &&
-          (clip.sourceStart > 0 || (clip.duration > 0 && clip.duration < (project.source.probe?.duration || 10) - 0.5))
+          ((clip.sourceStart ?? 0) > 0 || ((clip.duration ?? 0) > 0 && (clip.duration ?? 0) < (project.source.probe?.duration || 10) - 0.5))
         ) {
-          trimArgs = `-ss ${clip.sourceStart.toFixed(2)} -t ${clip.duration.toFixed(2)}`;
+          trimArgs = `-ss ${(clip.sourceStart ?? 0).toFixed(2)} -t ${(clip.duration ?? 0).toFixed(2)}`;
         }
 
         // Fast direct audio extraction at 16kHz mono (takes <1s, no blocking multi-pass filter)

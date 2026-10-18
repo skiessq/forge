@@ -185,7 +185,9 @@ export default function BatchExportModal({ isOpen, onClose, projects }: Props) {
                     <span className="font-medium text-white truncate max-w-xs">{p.name}</span>
                   </div>
                   <span className="font-mono text-[10px] text-slate-500">
-                    {p.source.probe?.duration.toFixed(1)}s
+                    {typeof p.source.probe?.duration === 'number' && !isNaN(p.source.probe.duration)
+                      ? `${p.source.probe.duration.toFixed(1)}s`
+                      : 'N/A'}
                   </span>
                 </label>
               ))}

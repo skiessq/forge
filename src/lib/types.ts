@@ -67,6 +67,7 @@ export interface LayoutConfig {
   regions: LayoutRegion[];
   secondaryMediaPath?: string;
   secondaryMediaType?: 'image' | 'video' | 'gif';
+  secondaryMediaProbe?: { width: number; height: number; duration?: number };
 }
 
 export interface SubtitleWord {

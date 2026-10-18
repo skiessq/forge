@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       if (ffmpegExe && fs.existsSync(baseProject.source.path)) {
         try {
           // -ss before -i for fast seek, accurate encoding to guarantee zero audio drift and exact frame cuts
-          const cutCmd = `"${ffmpegExe}" -y -ss ${cand.start.toFixed(3)} -t ${cand.duration.toFixed(3)} -i "${baseProject.source.path}" -c:v libx264 -preset veryfast -crf 18 -c:a aac -b:a 192k "${cutVideoPath}"`;
+          const cutCmd = `"${ffmpegExe}" -y -ss ${(cand.start ?? 0).toFixed(3)} -t ${(cand.duration ?? 0).toFixed(3)} -i "${baseProject.source.path}" -c:v libx264 -preset veryfast -crf 18 -c:a aac -b:a 192k "${cutVideoPath}"`;
           execSync(cutCmd, { stdio: 'pipe' });
           if (fs.existsSync(cutVideoPath) && fs.statSync(cutVideoPath).size > 1000) {
             hasCutFile = true;
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
         } catch (cutErr) {
           console.error(`Failed re-encode cut for candidate ${cand.id}, attempting stream copy fallback:`, cutErr);
           try {
-            const copyCmd = `"${ffmpegExe}" -y -ss ${cand.start.toFixed(3)} -t ${cand.duration.toFixed(3)} -i "${baseProject.source.path}" -c copy "${cutVideoPath}"`;
+            const copyCmd = `"${ffmpegExe}" -y -ss ${(cand.start ?? 0).toFixed(3)} -t ${(cand.duration ?? 0).toFixed(3)} -i "${baseProject.source.path}" -c copy "${cutVideoPath}"`;
             execSync(copyCmd, { stdio: 'pipe' });
             if (fs.existsSync(cutVideoPath) && fs.statSync(cutVideoPath).size > 1000) {
               hasCutFile = true;

@@ -22,6 +22,7 @@ import SilenceRemovalModal from './SilenceRemovalModal';
 import SubtitleEditor from './SubtitleEditor';
 import AutoSplitModal from './AutoSplitModal';
 import AutoHighlightModal from '@/components/highlight/AutoHighlightModal';
+import SecondaryMediaManager from './SecondaryMediaManager';
 import { Bookmark, FolderDown, PlusCircle } from 'lucide-react';
 
 export default function LeftSidebar() {
@@ -217,6 +218,9 @@ export default function LeftSidebar() {
                 })}
               </div>
             </div>
+
+            {/* Secondary Media Upload & Manager (for Media Top / Media Bottom templates) */}
+            <SecondaryMediaManager />
 
             {/* Split Ratio Slider (if split template) */}
             {(project.layout.templateId === 'split_facecam_top' ||

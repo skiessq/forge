@@ -52,6 +52,11 @@ interface EditorState {
   setCanvasAspectRatio: (ratio: AspectRatio) => void;
   setLayoutTemplate: (templateId: LayoutTemplateId) => void;
   setSplitRatio: (ratio: number) => void;
+  setSecondaryMedia: (
+    mediaPath: string | null,
+    mediaType?: 'video' | 'image' | 'gif',
+    probe?: { width: number; height: number; duration?: number }
+  ) => void;
   updateRegionCrop: (regionId: string, crop: Partial<CropRect>) => void;
   zoomRegion: (regionId: string, zoomFactor: number) => void;
   resetRegionCrop: (regionId: string) => void;
@@ -212,6 +217,40 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  setSecondaryMedia: (mediaPath, mediaType, probe) => {
+    get().updateProject((draft) => {
+      draft.layout.secondaryMediaPath = mediaPath || undefined;
+      draft.layout.secondaryMediaType = mediaType || undefined;
+      draft.layout.secondaryMediaProbe = probe || undefined;
+
+      if (mediaPath) {
+        const secReg = draft.layout.regions.find((r) => r.sourceType === 'secondary_media');
+        if (secReg) {
+          const canvasW = draft.canvas.width;
+          const canvasH = draft.canvas.height;
+          const targetAspect = (canvasW * secReg.targetBounds.width) / Math.max(1, canvasH * secReg.targetBounds.height);
+          const sW = probe?.width || 1920;
+          const sH = probe?.height || 1080;
+          const sAspect = sW / sH;
+
+          let w = 1.0;
+          let h = (w * sAspect) / targetAspect;
+          if (secReg.fit === 'cover' && h < 1.0) {
+            h = 1.0;
+            w = (h * targetAspect) / sAspect;
+          }
+          secReg.crop = {
+            x: parseFloat(((1 - w) / 2).toFixed(3)),
+            y: parseFloat(((1 - h) / 2).toFixed(3)),
+            width: parseFloat(w.toFixed(3)),
+            height: parseFloat(h.toFixed(3)),
+          };
+        }
+      }
+      return draft;
+    });
+  },
+
   updateRegionCrop: (regionId, cropUpdate) => {
     get().updateProject((draft) => {
       const selectedClipId = get().selectedClipId;
@@ -271,8 +310,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         const canvasW = draft.canvas.width;
         const canvasH = draft.canvas.height;
         const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
-        const srcW = draft.source.probe?.width || 1920;
-        const srcH = draft.source.probe?.height || 1080;
+        const isSecondary = reg.sourceType === 'secondary_media';
+        const srcW = isSecondary
+          ? (draft.layout.secondaryMediaProbe?.width || 1920)
+          : (draft.source.probe?.width || 1920);
+        const srcH = isSecondary
+          ? (draft.layout.secondaryMediaProbe?.height || 1080)
+          : (draft.source.probe?.height || 1080);
         const srcAspect = srcW / srcH;
 
         const currentW = reg.crop.width;
@@ -318,8 +362,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         const canvasW = draft.canvas.width;
         const canvasH = draft.canvas.height;
         const targetAspect = (canvasW * reg.targetBounds.width) / Math.max(1, canvasH * reg.targetBounds.height);
-        const srcW = draft.source.probe?.width || 1920;
-        const srcH = draft.source.probe?.height || 1080;
+        const isSecondary = reg.sourceType === 'secondary_media';
+        const srcW = isSecondary
+          ? (draft.layout.secondaryMediaProbe?.width || 1920)
+          : (draft.source.probe?.width || 1920);
+        const srcH = isSecondary
+          ? (draft.layout.secondaryMediaProbe?.height || 1080)
+          : (draft.source.probe?.height || 1080);
         const srcAspect = srcW / srcH;
 
         let w = 1.0;

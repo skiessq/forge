@@ -266,7 +266,7 @@ export default function Timeline() {
                     </span>
                   )}
                   <span className="ml-auto font-mono text-[10px] text-blue-300/80">
-                    {clip.duration.toFixed(1)}s
+                    {(clip.duration ?? 0).toFixed(1)}s
                   </span>
                 </div>
               );

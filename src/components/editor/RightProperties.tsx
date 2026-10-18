@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useEditorStore } from '@/store/useEditorStore';
 import { Sliders, Crop, Info, ZoomIn, Move, RotateCcw, ChevronDown, ChevronUp, Cpu, Sparkles } from 'lucide-react';
 import { FitMode } from '@/lib/types';
+import SecondaryMediaManager from './SecondaryMediaManager';
 
 export default function RightProperties() {
   const {
@@ -30,29 +31,34 @@ export default function RightProperties() {
     : project.layout;
 
   const selectedRegion = effectiveLayout.regions.find((r) => r.id === selectedRegionId);
-  const probe = project.source.probe;
+  const isSecondary = selectedRegion?.sourceType === 'secondary_media';
+  const sourceProbe = project.source.probe;
+  const regionProbe = (isSecondary ? project.layout.secondaryMediaProbe : sourceProbe) || {
+    width: 1920,
+    height: 1080,
+  };
 
   // Calculate current zoom factor based on crop width
-  const currentZoom = Math.round((1 / Math.max(0.05, selectedRegion?.crop.width || 1)) * 100);
+  const currentZoom = Math.round((1 / Math.max(0.05, selectedRegion?.crop?.width || 1)) * 100);
 
   const handleZoomChange = (targetZoomPercent: number) => {
     if (!selectedRegion) return;
     const factor = Math.max(0.5, Math.min(4.0, targetZoomPercent / 100));
-    const currentW = selectedRegion.crop.width;
-    const currentH = selectedRegion.crop.height;
+    const currentW = selectedRegion.crop?.width ?? 1;
+    const currentH = selectedRegion.crop?.height ?? 1;
 
     const newW = 1 / factor;
     const targetAspect =
       (project.canvas.width * selectedRegion.targetBounds.width) /
       Math.max(1, project.canvas.height * selectedRegion.targetBounds.height);
-    const srcW = probe?.width || 1920;
-    const srcH = probe?.height || 1080;
+    const srcW = regionProbe?.width || 1920;
+    const srcH = regionProbe?.height || 1080;
     const srcAspect = srcW / srcH;
     const newH = (newW * srcAspect) / targetAspect;
 
     // Anchor center
-    const centerX = selectedRegion.crop.x + currentW / 2;
-    const centerY = selectedRegion.crop.y + currentH / 2;
+    const centerX = (selectedRegion.crop?.x ?? 0) + currentW / 2;
+    const centerY = (selectedRegion.crop?.y ?? 0) + currentH / 2;
 
     updateRegionCrop(selectedRegion.id, {
       x: parseFloat((centerX - newW / 2).toFixed(3)),
@@ -67,8 +73,8 @@ export default function RightProperties() {
     const targetAspect =
       (project.canvas.width * selectedRegion.targetBounds.width) /
       Math.max(1, project.canvas.height * selectedRegion.targetBounds.height);
-    const srcW = probe?.width || 1920;
-    const srcH = probe?.height || 1080;
+    const srcW = regionProbe?.width || 1920;
+    const srcH = regionProbe?.height || 1080;
     const srcAspect = srcW / srcH;
 
     if (preset === 'facecam_left') {
@@ -103,7 +109,7 @@ export default function RightProperties() {
         height: parseFloat(h.toFixed(3)),
       });
     } else if (preset === 'center') {
-      const w = selectedRegion.crop.width;
+      const w = selectedRegion.crop?.width ?? 1;
       const h = (w * srcAspect) / targetAspect;
       updateRegionCrop(selectedRegion.id, {
         x: parseFloat(((1 - w) / 2).toFixed(3)),
@@ -112,6 +118,63 @@ export default function RightProperties() {
         height: parseFloat(h.toFixed(3)),
       });
     } else if (preset === 'full') {
+      resetRegionCrop(selectedRegion.id);
+    }
+  };
+
+  const applySecondaryPreset = (preset: 'fit' | 'fill' | 'zoom_150' | 'zoom_200' | 'center' | 'reset') => {
+    if (!selectedRegion) return;
+    const targetAspect =
+      (project.canvas.width * selectedRegion.targetBounds.width) /
+      Math.max(1, project.canvas.height * selectedRegion.targetBounds.height);
+    const srcW = regionProbe?.width || 1920;
+    const srcH = regionProbe?.height || 1080;
+    const srcAspect = srcW / srcH;
+
+    if (preset === 'fit') {
+      let w = 1.0;
+      let h = (w * srcAspect) / targetAspect;
+      updateRegionCrop(selectedRegion.id, {
+        x: parseFloat(((1 - w) / 2).toFixed(3)),
+        y: parseFloat(((1 - h) / 2).toFixed(3)),
+        width: parseFloat(w.toFixed(3)),
+        height: parseFloat(h.toFixed(3)),
+      });
+      updateProject((draft) => {
+        const reg = draft.layout.regions.find((r) => r.id === selectedRegion.id);
+        if (reg) reg.fit = 'contain';
+        return draft;
+      });
+    } else if (preset === 'fill') {
+      let w = 1.0;
+      let h = (w * srcAspect) / targetAspect;
+      if (h < 1.0) {
+        h = 1.0;
+        w = (h * targetAspect) / srcAspect;
+      }
+      updateRegionCrop(selectedRegion.id, {
+        x: parseFloat(((1 - w) / 2).toFixed(3)),
+        y: parseFloat(((1 - h) / 2).toFixed(3)),
+        width: parseFloat(w.toFixed(3)),
+        height: parseFloat(h.toFixed(3)),
+      });
+      updateProject((draft) => {
+        const reg = draft.layout.regions.find((r) => r.id === selectedRegion.id);
+        if (reg) reg.fit = 'cover';
+        return draft;
+      });
+    } else if (preset === 'zoom_150') {
+      handleZoomChange(150);
+    } else if (preset === 'zoom_200') {
+      handleZoomChange(200);
+    } else if (preset === 'center') {
+      const w = selectedRegion.crop?.width ?? 1;
+      const h = selectedRegion.crop?.height || (w * srcAspect) / targetAspect;
+      updateRegionCrop(selectedRegion.id, {
+        x: parseFloat(((1 - w) / 2).toFixed(3)),
+        y: parseFloat(((1 - h) / 2).toFixed(3)),
+      });
+    } else if (preset === 'reset') {
       resetRegionCrop(selectedRegion.id);
     }
   };
@@ -144,7 +207,7 @@ export default function RightProperties() {
             <div className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 text-[11px] space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-blue-300">
-                  {activeClip.id.includes('split') ? 'Video Segment' : 'Clip 1'} ({activeClip.start.toFixed(1)}s - {(activeClip.start + activeClip.duration).toFixed(1)}s)
+                  {activeClip.id.includes('split') ? 'Video Segment' : 'Clip 1'} ({(activeClip.start ?? 0).toFixed(1)}s - {((activeClip.start ?? 0) + (activeClip.duration ?? 0)).toFixed(1)}s)
                 </span>
                 {activeClip.layoutOverride ? (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
@@ -169,38 +232,83 @@ export default function RightProperties() {
             </span>
           </div>
 
+          {isSecondary && (
+            <SecondaryMediaManager />
+          )}
+
           {/* Quick Framing Presets */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-              <span>Quick Framing Presets</span>
+              <span>{isSecondary ? 'Media Framing Presets' : 'Quick Framing Presets'}</span>
             </span>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                onClick={() => applyPreset('facecam_left')}
-                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
-              >
-                Facecam (Left)
-              </button>
-              <button
-                onClick={() => applyPreset('facecam_right')}
-                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
-              >
-                Facecam (Right)
-              </button>
-              <button
-                onClick={() => applyPreset('game_center')}
-                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
-              >
-                Gameplay Focus
-              </button>
-              <button
-                onClick={() => applyPreset('center')}
-                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
-              >
-                Center Crop
-              </button>
-            </div>
+            {isSecondary ? (
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => applySecondaryPreset('fit')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Fit (Letterbox)
+                </button>
+                <button
+                  onClick={() => applySecondaryPreset('fill')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Fill (Cover Slot)
+                </button>
+                <button
+                  onClick={() => applySecondaryPreset('zoom_150')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Zoom 150%
+                </button>
+                <button
+                  onClick={() => applySecondaryPreset('zoom_200')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Zoom 200%
+                </button>
+                <button
+                  onClick={() => applySecondaryPreset('center')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Center Position
+                </button>
+                <button
+                  onClick={() => applySecondaryPreset('reset')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Reset Framing
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => applyPreset('facecam_left')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Facecam (Left)
+                </button>
+                <button
+                  onClick={() => applyPreset('facecam_right')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Facecam (Right)
+                </button>
+                <button
+                  onClick={() => applyPreset('game_center')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Gameplay Focus
+                </button>
+                <button
+                  onClick={() => applyPreset('center')}
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-[11px] text-slate-300 transition text-left"
+                >
+                  Center Crop
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Unconstrained Framing Controls */}
@@ -211,7 +319,7 @@ export default function RightProperties() {
                 <span>Pan & Position (Unconstrained)</span>
               </div>
               <button
-                onClick={() => applyPreset('full')}
+                onClick={() => (isSecondary ? applySecondaryPreset('reset') : applyPreset('full'))}
                 title="Reset to full frame"
                 className="p-1 hover:text-white hover:bg-slate-800 rounded transition"
               >
@@ -265,7 +373,7 @@ export default function RightProperties() {
                     type="button"
                     onClick={() =>
                       updateRegionCrop(selectedRegion.id, {
-                        x: parseFloat(((1 - selectedRegion.crop.width) / 2).toFixed(3)),
+                        x: parseFloat(((1 - (selectedRegion.crop?.width ?? 1)) / 2).toFixed(3)),
                       })
                     }
                     className="text-[9px] px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-blue-400 transition"
@@ -314,7 +422,7 @@ export default function RightProperties() {
                     type="button"
                     onClick={() =>
                       updateRegionCrop(selectedRegion.id, {
-                        y: parseFloat(((1 - selectedRegion.crop.height) / 2).toFixed(3)),
+                        y: parseFloat(((1 - (selectedRegion.crop?.height ?? 1)) / 2).toFixed(3)),
                       })
                     }
                     className="text-[9px] px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-blue-400 transition"
@@ -584,24 +692,28 @@ export default function RightProperties() {
           <div className="flex justify-between">
             <span>Dimensions:</span>
             <span className="text-white">
-              {probe?.width}x{probe?.height}
+              {sourceProbe?.width || 1920}x{sourceProbe?.height || 1080}
             </span>
           </div>
           <div className="flex justify-between">
             <span>Duration:</span>
-            <span className="text-white">{probe?.duration.toFixed(1)}s</span>
+            <span className="text-white">
+              {typeof sourceProbe?.duration === 'number' && !isNaN(sourceProbe.duration)
+                ? `${sourceProbe.duration.toFixed(1)}s`
+                : 'N/A'}
+            </span>
           </div>
           <div className="flex justify-between">
             <span>Framerate:</span>
-            <span className="text-white">{probe?.fps} FPS</span>
+            <span className="text-white">{sourceProbe?.fps || 30} FPS</span>
           </div>
           <div className="flex justify-between">
             <span>Codec:</span>
-            <span className="text-white uppercase">{probe?.codec}</span>
+            <span className="text-white uppercase">{sourceProbe?.codec || 'H.264'}</span>
           </div>
           <div className="flex justify-between">
             <span>Audio Tracks:</span>
-            <span className="text-emerald-400">{probe?.audioTracks.length || 0} track(s)</span>
+            <span className="text-emerald-400">{sourceProbe?.audioTracks?.length || 0} track(s)</span>
           </div>
         </div>
       </div>
