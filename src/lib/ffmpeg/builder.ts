@@ -117,15 +117,23 @@ export function buildFFmpegExportCommand(
     const tpl = layout.templateId;
     const splitRatio = layout.splitRatio || 0.5;
 
-    // Split input into 2 streams for multi-region layout
-    chains.push(`${baseInput}split=2[v_split_1_${suffix}][v_split_2_${suffix}]`);
+    // Split input into 2 streams ONLY for layouts that consume 2 primary video streams
+    const needsDualSplit =
+      tpl === 'split_facecam_top' ||
+      tpl === 'split_gameplay_top' ||
+      tpl === 'blurred_background_fit' ||
+      tpl === 'picture_in_picture';
+
+    if (needsDualSplit) {
+      chains.push(`${baseInput}split=2[v_split_1_${suffix}][v_split_2_${suffix}]`);
+    }
 
     switch (tpl) {
       case 'gameplay_full': {
         const reg = layout.regions[0] || {
           crop: { x: 0.2, y: 0, width: 0.6, height: 1 },
         };
-        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, reg, canvasWidth, canvasHeight, outputNode));
+        chains.push(buildCropScaleFilter(baseInput, reg, canvasWidth, canvasHeight, outputNode));
         break;
       }
 
@@ -162,7 +170,7 @@ export function buildFFmpegExportCommand(
         const gameReg = isMediaTop ? layout.regions[1] : layout.regions[0];
         const mediaReg = isMediaTop ? layout.regions[0] : layout.regions[1];
 
-        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, gameReg, canvasWidth, gameH, `[v_game_${suffix}]`));
+        chains.push(buildCropScaleFilter(baseInput, gameReg, canvasWidth, gameH, `[v_game_${suffix}]`));
 
         if (secondaryInputIndex >= 0) {
           let secW = layout.secondaryMediaProbe?.width;
@@ -244,7 +252,7 @@ export function buildFFmpegExportCommand(
 
       default: {
         const reg = layout.regions[0] || { crop: { x: 0, y: 0, width: 1, height: 1 } };
-        chains.push(buildCropScaleFilter(`[v_split_1_${suffix}]`, reg, canvasWidth, canvasHeight, outputNode));
+        chains.push(buildCropScaleFilter(baseInput, reg, canvasWidth, canvasHeight, outputNode));
         break;
       }
     }
