@@ -414,6 +414,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().updateProject((draft) => {
       const selectedClipId = get().selectedClipId;
       const curTime = get().currentTime;
+      const layoutScope = get().layoutScope;
       const vTrack = draft.tracks.find((t) => t.type === 'video');
       const targetClip = vTrack?.clips.find((c) =>
         selectedClipId ? c.id === selectedClipId : curTime >= c.start && curTime < c.start + c.duration
@@ -426,19 +427,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         height: cropUpdate.height !== undefined ? Math.max(0.02, Math.min(3, cropUpdate.height)) : undefined,
       };
 
-      // 1. If multiple clips exist, save to target clip's layoutOverride
-      if (targetClip && vTrack && vTrack.clips.length > 1) {
-        if (!targetClip.layoutOverride) {
+      // 1. Update target clip's layoutOverride if present or targeted
+      if (targetClip) {
+        if (!targetClip.layoutOverride && vTrack && vTrack.clips.length > 1 && layoutScope === 'clip') {
           targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
         }
-        const clipRegion = targetClip.layoutOverride?.regions.find((r) => r.id === regionId);
-        if (clipRegion) {
-          clipRegion.crop = {
-            x: newCrop.x !== undefined ? newCrop.x : clipRegion.crop.x,
-            y: newCrop.y !== undefined ? newCrop.y : clipRegion.crop.y,
-            width: newCrop.width !== undefined ? newCrop.width : clipRegion.crop.width,
-            height: newCrop.height !== undefined ? newCrop.height : clipRegion.crop.height,
-          };
+        if (targetClip.layoutOverride) {
+          const clipRegion = targetClip.layoutOverride.regions.find((r) => r.id === regionId);
+          if (clipRegion) {
+            clipRegion.crop = {
+              x: newCrop.x !== undefined ? newCrop.x : clipRegion.crop.x,
+              y: newCrop.y !== undefined ? newCrop.y : clipRegion.crop.y,
+              width: newCrop.width !== undefined ? newCrop.width : clipRegion.crop.width,
+              height: newCrop.height !== undefined ? newCrop.height : clipRegion.crop.height,
+            };
+          }
         }
       }
 
@@ -460,6 +463,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().updateProject((draft) => {
       const selectedClipId = get().selectedClipId;
       const curTime = get().currentTime;
+      const layoutScope = get().layoutScope;
       const vTrack = draft.tracks.find((t) => t.type === 'video');
       const targetClip = vTrack?.clips.find((c) =>
         selectedClipId ? c.id === selectedClipId : curTime >= c.start && curTime < c.start + c.duration
@@ -478,13 +482,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : (draft.source.probe?.height || 1080);
         const srcAspect = srcW / srcH;
 
-        const currentW = reg.crop.width;
+        const currentW = reg.crop.width || 1.0;
+        const currentH = reg.crop.height || (currentW * srcAspect) / targetAspect;
         const newW = Math.max(0.05, Math.min(2.5, currentW / zoomFactor));
         const newH = (newW * srcAspect) / targetAspect;
 
         // Keep center anchored
         const centerX = reg.crop.x + currentW / 2;
-        const centerY = reg.crop.y + reg.crop.height / 2;
+        const centerY = reg.crop.y + currentH / 2;
         reg.crop = {
           x: parseFloat((centerX - newW / 2).toFixed(3)),
           y: parseFloat((centerY - newH / 2).toFixed(3)),
@@ -493,12 +498,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         };
       };
 
-      if (targetClip && vTrack && vTrack.clips.length > 1) {
-        if (!targetClip.layoutOverride) {
+      if (targetClip) {
+        if (!targetClip.layoutOverride && vTrack && vTrack.clips.length > 1 && layoutScope === 'clip') {
           targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
         }
-        const clipRegion = targetClip.layoutOverride?.regions.find((r) => r.id === regionId);
-        if (clipRegion) applyZoom(clipRegion);
+        if (targetClip.layoutOverride) {
+          const clipRegion = targetClip.layoutOverride.regions.find((r) => r.id === regionId);
+          if (clipRegion) applyZoom(clipRegion);
+        }
       }
 
       const region = draft.layout.regions.find((r) => r.id === regionId);
@@ -512,6 +519,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().updateProject((draft) => {
       const selectedClipId = get().selectedClipId;
       const curTime = get().currentTime;
+      const layoutScope = get().layoutScope;
       const vTrack = draft.tracks.find((t) => t.type === 'video');
       const targetClip = vTrack?.clips.find((c) =>
         selectedClipId ? c.id === selectedClipId : curTime >= c.start && curTime < c.start + c.duration
@@ -545,12 +553,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         };
       };
 
-      if (targetClip && vTrack && vTrack.clips.length > 1) {
-        if (!targetClip.layoutOverride) {
+      if (targetClip) {
+        if (!targetClip.layoutOverride && vTrack && vTrack.clips.length > 1 && layoutScope === 'clip') {
           targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
         }
-        const clipRegion = targetClip.layoutOverride?.regions.find((r) => r.id === regionId);
-        if (clipRegion) applyReset(clipRegion);
+        if (targetClip.layoutOverride) {
+          const clipRegion = targetClip.layoutOverride.regions.find((r) => r.id === regionId);
+          if (clipRegion) applyReset(clipRegion);
+        }
       }
 
       const region = draft.layout.regions.find((r) => r.id === regionId);

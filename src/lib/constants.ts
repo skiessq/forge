@@ -303,7 +303,18 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
       };
     }
 
-    case 'media_top_game_bottom':
+    case 'media_top_game_bottom': {
+      const botAspect = 1080 / Math.max(1, 1920 * (1 - splitRatio));
+      const srcAspect = 1920 / 1080;
+
+      let gameH = 1.0;
+      let gameW = parseFloat(((gameH * botAspect) / srcAspect).toFixed(3));
+      if (gameW > 1.0) {
+        gameW = 1.0;
+        gameH = parseFloat(((gameW * srcAspect) / botAspect).toFixed(3));
+      }
+      const gameX = parseFloat(((1 - gameW) / 2).toFixed(3));
+
       return {
         templateId,
         splitRatio,
@@ -323,13 +334,25 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
             label: 'Gameplay / Cam (Bottom)',
             sourceType: 'primary',
             targetBounds: { x: 0, y: splitRatio, width: 1, height: 1 - splitRatio },
-            crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            crop: { x: gameX, y: 0, width: gameW, height: gameH },
             fit: 'cover',
           },
         ],
       };
+    }
 
-    case 'media_bottom_game_top':
+    case 'media_bottom_game_top': {
+      const topAspect = 1080 / Math.max(1, 1920 * splitRatio);
+      const srcAspect = 1920 / 1080;
+
+      let gameH = 1.0;
+      let gameW = parseFloat(((gameH * topAspect) / srcAspect).toFixed(3));
+      if (gameW > 1.0) {
+        gameW = 1.0;
+        gameH = parseFloat(((gameW * srcAspect) / topAspect).toFixed(3));
+      }
+      const gameX = parseFloat(((1 - gameW) / 2).toFixed(3));
+
       return {
         templateId,
         splitRatio,
@@ -341,7 +364,7 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
             label: 'Gameplay / Cam (Top)',
             sourceType: 'primary',
             targetBounds: { x: 0, y: 0, width: 1, height: splitRatio },
-            crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            crop: { x: gameX, y: 0, width: gameW, height: gameH },
             fit: 'cover',
           },
           {
@@ -354,6 +377,7 @@ export function getLayoutTemplate(templateId: LayoutTemplateId, splitRatio = 0.5
           },
         ],
       };
+    }
 
     case 'blurred_background_fit':
       return {

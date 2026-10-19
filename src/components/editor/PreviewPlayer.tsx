@@ -767,8 +767,19 @@ export default function PreviewPlayer() {
         const currentRegion = effectiveLayout.regions.find((r) => r.id === drag.regionId);
         if (!currentRegion) return;
 
-      const vW = primaryVideoRef.current?.videoWidth || 1920;
-      const vH = primaryVideoRef.current?.videoHeight || 1080;
+      const isSec = currentRegion.sourceType === 'secondary_media';
+      const secW =
+        secondaryVideoRef.current?.videoWidth ||
+        secondaryImageRef.current?.naturalWidth ||
+        secondaryMediaProbe?.width ||
+        1920;
+      const secH =
+        secondaryVideoRef.current?.videoHeight ||
+        secondaryImageRef.current?.naturalHeight ||
+        secondaryMediaProbe?.height ||
+        1080;
+      const vW = isSec ? secW : (primaryVideoRef.current?.videoWidth || 1920);
+      const vH = isSec ? secH : (primaryVideoRef.current?.videoHeight || 1080);
       const targetAspect = drag.regionWidthPx / Math.max(1, drag.regionHeightPx);
       const effectiveCropHNorm = (currentRegion.crop.width * (vW / vH)) / targetAspect;
 
@@ -920,11 +931,34 @@ export default function PreviewPlayer() {
   // Mouse wheel zooms region in/out
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const container = containerRef.current;
-    if (!container || !selectedRegionId) return;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const cursorXNorm = (e.clientX - rect.left) / rect.width;
+    const cursorYNorm = (e.clientY - rect.top) / rect.height;
+
+    const targetRegion =
+      effectiveLayout.regions.find((r) => {
+        const b = r.targetBounds;
+        return (
+          cursorXNorm >= b.x &&
+          cursorXNorm <= b.x + b.width &&
+          cursorYNorm >= b.y &&
+          cursorYNorm <= b.y + b.height
+        );
+      }) ||
+      effectiveLayout.regions.find((r) => r.id === selectedRegionId) ||
+      effectiveLayout.regions[0];
+
+    if (!targetRegion) return;
+
+    if (selectedRegionId !== targetRegion.id) {
+      setSelectedRegionId(targetRegion.id);
+    }
 
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.08 : 0.92;
-    zoomRegion(selectedRegionId, factor);
+    zoomRegion(targetRegion.id, factor);
   };
 
   // Active Subtitle for current playhead
