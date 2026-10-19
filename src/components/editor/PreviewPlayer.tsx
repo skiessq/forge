@@ -1447,9 +1447,15 @@ export default function PreviewPlayer() {
                     const nextWord = activeSubtitle.words![idx + 1];
                     const wordEnd = nextWord ? nextWord.start : w.end;
                     const isActive = currentTime >= w.start && currentTime < wordEnd;
+                    const isHighlightAnim =
+                      project.subtitleStyle.animation === 'karaoke_highlight' ||
+                      project.subtitleStyle.animation === 'pop_in' ||
+                      project.subtitleStyle.animation === 'bounce_word' ||
+                      project.subtitleStyle.animation === 'neon_glow';
+
                     const wordColor =
                       w.color ||
-                      (isActive && project.subtitleStyle.animation === 'karaoke_highlight'
+                      (isActive && isHighlightAnim
                         ? project.subtitleStyle.highlightColor || '#FFE600'
                         : project.subtitleStyle.primaryColor || '#FFFFFF');
 

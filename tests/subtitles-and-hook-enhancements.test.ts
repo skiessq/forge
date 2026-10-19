@@ -164,3 +164,87 @@ test('FFmpeg builder includes intro hook with custom positioning, transition, an
     'Filtergraph includes overlay or subtitles for Intro Hook'
   );
 });
+
+test('ASS generator outputs calibrated font size 154 and WrapStyle: 0 for 1080p preview parity', () => {
+  const mockProject: any = {
+    canvas: { width: 1080, height: 1920, fps: 30, aspectRatio: '9:16' },
+    subtitles: [
+      {
+        id: 's1',
+        start: 0,
+        end: 2,
+        text: 'BIG BOLD CAPTIONS',
+        words: [
+          { word: 'BIG', start: 0, end: 0.6 },
+          { word: 'BOLD', start: 0.6, end: 1.2 },
+          { word: 'CAPTIONS', start: 1.2, end: 2.0 },
+        ],
+      },
+    ],
+    subtitleStyle: {
+      fontFamily: 'Montserrat',
+      fontSize: 54,
+      primaryColor: '#FFFFFF',
+      highlightColor: '#FFE600',
+      outlineColor: '#000000',
+      outlineWidth: 4,
+      animation: 'pop_in',
+    },
+  };
+
+  const ass = generateAssSubtitles(mockProject);
+  assert.ok(ass.includes('WrapStyle: 0'), 'ASS header sets WrapStyle: 0 for smart multi-line wrapping');
+  assert.ok(ass.includes('Style: Default,Montserrat Black,154,'), 'ASS font size is calibrated to 154 (54 * 2.85) matching preview 1:1');
+  assert.ok(ass.includes('\\fscx124\\fscy124\\t(0,100,\\fscx108\\fscy108)'), 'Generates pop_in scale transform tags for active word');
+});
+
+test('ASS generator produces bounce, neon, and typewriter tags accurately', () => {
+  const baseProject: any = {
+    canvas: { width: 1080, height: 1920, fps: 30, aspectRatio: '9:16' },
+    subtitles: [
+      {
+        id: 's1',
+        start: 0,
+        end: 2,
+        text: 'BOUNCE NEON TEST 🔥',
+        words: [
+          { word: 'BOUNCE', start: 0, end: 0.7 },
+          { word: 'NEON', start: 0.7, end: 1.4 },
+          { word: '🔥', start: 1.4, end: 2.0 },
+        ],
+      },
+    ],
+    subtitleStyle: {
+      fontFamily: 'Montserrat',
+      fontSize: 54,
+      primaryColor: '#FFFFFF',
+      highlightColor: '#FFE600',
+      outlineColor: '#000000',
+      outlineWidth: 4,
+    },
+  };
+
+  // Test bounce_word
+  const bounceAss = generateAssSubtitles({
+    ...baseProject,
+    subtitleStyle: { ...baseProject.subtitleStyle, animation: 'bounce_word' },
+  });
+  assert.ok(bounceAss.includes('\\fscx108\\fscy125'), 'Bounce animation includes vertical stretch tags');
+
+  // Test neon_glow
+  const neonAss = generateAssSubtitles({
+    ...baseProject,
+    subtitleStyle: { ...baseProject.subtitleStyle, animation: 'neon_glow' },
+  });
+  assert.ok(neonAss.includes('\\blur5'), 'Neon animation includes blur tag');
+
+  // Test typewriter
+  const typeAss = generateAssSubtitles({
+    ...baseProject,
+    subtitleStyle: { ...baseProject.subtitleStyle, animation: 'typewriter' },
+  });
+  // In typewriter, dialogue line 0 has only word 0
+  const dialogueLines = typeAss.split('\n').filter((l: string) => l.startsWith('Dialogue: 0,'));
+  assert.strictEqual(dialogueLines.length, 3, 'Typewriter creates sequential dialogue entries per word');
+});
+

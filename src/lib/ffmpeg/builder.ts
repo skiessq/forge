@@ -32,6 +32,9 @@ export function buildFFmpegExportCommand(
   // Determine output directory and file
   const projectDir = path.dirname(project.source.path);
   const exportsDir = path.join(projectDir, 'exports');
+  if (!fs.existsSync(exportsDir)) {
+    fs.mkdirSync(exportsDir, { recursive: true });
+  }
   const sanitizedName = (settings.outputFileName || 'short.mp4').replace(/[^a-zA-Z0-9_.-]/g, '_');
   const outputPath = path.join(exportsDir, sanitizedName);
 
@@ -416,6 +419,9 @@ export function buildFFmpegExportCommand(
     const projectJsonPath = path.join(projectDir, 'project.json');
     const hookOverlayPath = path.join(projectDir, 'hook_overlay.png');
     try {
+      if (!fs.existsSync(projectDir)) {
+        fs.mkdirSync(projectDir, { recursive: true });
+      }
       fs.writeFileSync(projectJsonPath, JSON.stringify(project, null, 2), 'utf-8');
       require('child_process').execSync(
         `powershell.exe -ExecutionPolicy Bypass -File "${scriptPath}" -projectJsonPath "${projectJsonPath}" -outputPath "${hookOverlayPath}"`,
@@ -488,6 +494,9 @@ export function buildFFmpegExportCommand(
     const { generateAssSubtitles } = require('../subtitles/assGenerator');
     const assContent = generateAssSubtitles(project, { includeIntroHook: !hookOverlaid });
     const assPath = path.join(projectDir, 'subtitles.ass');
+    if (!fs.existsSync(projectDir)) {
+      fs.mkdirSync(projectDir, { recursive: true });
+    }
     fs.writeFileSync(assPath, assContent, 'utf-8');
 
     // Escape Windows file path for FFmpeg subtitles filter: C\:/path/to/file.ass
