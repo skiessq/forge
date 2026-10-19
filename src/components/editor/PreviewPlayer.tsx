@@ -426,7 +426,7 @@ export default function PreviewPlayer() {
           // Render divider line for split layouts
           if (effectiveLayout.dividerWidth > 0 && effectiveLayout.regions.length >= 2) {
             const divY = (effectiveLayout.splitRatio || 0.5) * canvas.height;
-            const divH = effectiveLayout.dividerWidth * (canvas.height / 1920) * 1.5;
+            const divH = Math.max(2, Math.round(effectiveLayout.dividerWidth * 2 * (canvas.height / 1920)));
             ctx.fillStyle = effectiveLayout.dividerColor || '#3B82F6';
             ctx.fillRect(0, divY - divH / 2, canvas.width, divH);
           }

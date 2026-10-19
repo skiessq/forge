@@ -11,6 +11,8 @@ export default function RightProperties() {
     project,
     selectedRegionId,
     updateRegionCrop,
+    setDividerWidth,
+    setDividerColor,
     updateProject,
     resetRegionCrop,
     selectedClipId,
@@ -31,7 +33,7 @@ export default function RightProperties() {
   const selectedRegion = effectiveLayout.regions.find((r) => r.id === selectedRegionId);
   const isSecondary = selectedRegion?.sourceType === 'secondary_media';
   const sourceProbe = project.source.probe;
-  const regionProbe = (isSecondary ? project.layout.secondaryMediaProbe : sourceProbe) || {
+  const regionProbe = (isSecondary ? (effectiveLayout.secondaryMediaProbe || project.layout.secondaryMediaProbe) : sourceProbe) || {
     width: 1920,
     height: 1080,
   };
@@ -581,36 +583,31 @@ export default function RightProperties() {
           </div>
 
           {/* Split Divider Controls with 0px (Off) option */}
-          {project.layout.regions.length >= 2 && (
+          {(effectiveLayout?.regions?.length ?? 0) >= 2 && (
             <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-2.5">
               <div className="flex justify-between items-center text-xs">
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-300 font-medium">Split Divider</span>
-                  {(project.layout.dividerWidth ?? 0) === 0 ? (
+                  {(effectiveLayout.dividerWidth ?? 0) === 0 ? (
                     <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-medium">
                       0px (Off)
                     </span>
                   ) : (
                     <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 font-mono">
-                      {project.layout.dividerWidth}px
+                      {effectiveLayout.dividerWidth}px
                     </span>
                   )}
                 </div>
                 <input
                   type="color"
-                  disabled={(project.layout.dividerWidth ?? 0) === 0}
-                  value={project.layout.dividerColor || '#3B82F6'}
-                  onChange={(e) => {
-                    updateProject((draft) => {
-                      draft.layout.dividerColor = e.target.value;
-                      return draft;
-                    });
-                  }}
+                  disabled={(effectiveLayout.dividerWidth ?? 0) === 0}
+                  value={effectiveLayout.dividerColor || '#3B82F6'}
+                  onChange={(e) => setDividerColor(e.target.value)}
                   className={`w-5 h-5 rounded cursor-pointer border-0 bg-transparent transition ${
-                    (project.layout.dividerWidth ?? 0) === 0 ? 'opacity-30 cursor-not-allowed' : ''
+                    (effectiveLayout.dividerWidth ?? 0) === 0 ? 'opacity-30 cursor-not-allowed' : ''
                   }`}
                   title={
-                    (project.layout.dividerWidth ?? 0) === 0
+                    (effectiveLayout.dividerWidth ?? 0) === 0
                       ? 'Color inactive when divider is 0px'
                       : 'Change divider color'
                   }
@@ -623,17 +620,12 @@ export default function RightProperties() {
                   min="0"
                   max="12"
                   step="1"
-                  value={project.layout.dividerWidth ?? 0}
-                  onChange={(e) => {
-                    updateProject((draft) => {
-                      draft.layout.dividerWidth = parseInt(e.target.value, 10);
-                      return draft;
-                    });
-                  }}
+                  value={effectiveLayout.dividerWidth ?? 0}
+                  onChange={(e) => setDividerWidth(parseInt(e.target.value, 10))}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
                 <span className="text-xs font-mono text-slate-300 w-8 text-right">
-                  {project.layout.dividerWidth ?? 0}px
+                  {effectiveLayout.dividerWidth ?? 0}px
                 </span>
               </div>
 
@@ -646,17 +638,12 @@ export default function RightProperties() {
                   { label: '6px', val: 6, title: 'Bold 6px line' },
                   { label: '8px', val: 8, title: 'Thick 8px line' },
                 ].map((preset) => {
-                  const isSelected = (project.layout.dividerWidth ?? 0) === preset.val;
+                  const isSelected = (effectiveLayout.dividerWidth ?? 0) === preset.val;
                   return (
                     <button
                       key={preset.label}
                       type="button"
-                      onClick={() => {
-                        updateProject((draft) => {
-                          draft.layout.dividerWidth = preset.val;
-                          return draft;
-                        });
-                      }}
+                      onClick={() => setDividerWidth(preset.val)}
                       title={preset.title}
                       className={`py-1 text-[10px] rounded border transition text-center ${
                         isSelected

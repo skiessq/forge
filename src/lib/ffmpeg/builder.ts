@@ -160,8 +160,8 @@ export function buildFFmpegExportCommand(
         chains.push(buildCropScaleFilter(`[v_split_2_${suffix}]`, regBottom, canvasWidth, bottomH, `[v_bot_${suffix}]`));
 
         if (layout.dividerWidth > 0) {
-          const divH = layout.dividerWidth;
-          const color = layout.dividerColor.replace('#', '0x');
+          const divH = makeEven(Math.max(2, Math.round(layout.dividerWidth * 2)));
+          const color = (layout.dividerColor || '#3B82F6').replace('#', '0x');
           chains.push(
             `[v_top_${suffix}][v_bot_${suffix}]vstack=inputs=2[v_stacked_${suffix}]`,
             `[v_stacked_${suffix}]drawbox=x=0:y=${topH - Math.round(divH / 2)}:w=${canvasWidth}:h=${divH}:color=${color}@1:t=fill${outputNode}`
@@ -216,8 +216,8 @@ export function buildFFmpegExportCommand(
         const botStream = isMediaTop ? `[v_game_${suffix}]` : `[v_media_${suffix}]`;
 
         if (layout.dividerWidth > 0) {
-          const divH = layout.dividerWidth;
-          const color = layout.dividerColor.replace('#', '0x');
+          const divH = makeEven(Math.max(2, Math.round(layout.dividerWidth * 2)));
+          const color = (layout.dividerColor || '#3B82F6').replace('#', '0x');
           chains.push(
             `${topStream}${botStream}vstack=inputs=2[v_stacked_${suffix}]`,
             `[v_stacked_${suffix}]drawbox=x=0:y=${topH - Math.round(divH / 2)}:w=${canvasWidth}:h=${divH}:color=${color}@1:t=fill${outputNode}`

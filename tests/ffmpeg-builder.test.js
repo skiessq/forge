@@ -253,8 +253,8 @@ test('FFmpeg Builder generates valid filtergraph for Split Facecam Top', () => {
   const filtergraph = plan.args[plan.args.indexOf('-filter_complex') + 1];
   assert.match(filtergraph, /vstack=inputs=2/);
   assert.match(filtergraph, /drawbox=/);
-  assert.match(filtergraph, /\[v_top\]/);
-  assert.match(filtergraph, /\[v_bot\]/);
+  assert.match(filtergraph, /\[v_top/);
+  assert.match(filtergraph, /\[v_bot/);
 });
 
 test('FFmpeg Builder generates valid filtergraph for Blurred Background Fit', () => {
@@ -274,7 +274,7 @@ test('FFmpeg Builder generates valid filtergraph for Picture-in-Picture', () => 
   const plan = buildFFmpegExportCommand(project);
 
   const filtergraph = plan.args[plan.args.indexOf('-filter_complex') + 1];
-  assert.match(filtergraph, /\[v_base\]/);
-  assert.match(filtergraph, /\[v_pip\]/);
+  assert.match(filtergraph, /\[v_base/);
+  assert.match(filtergraph, /\[v_pip/);
   assert.match(filtergraph, /overlay=/);
 });
