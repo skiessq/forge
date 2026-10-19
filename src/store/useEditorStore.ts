@@ -190,31 +190,72 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const clips = vTrack?.clips || [];
       const hasMultipleClips = clips.length > 1;
 
-      // Check if we target a specific clip
+      // Preserve existing secondary media if any
+      const existingSecondaryPath =
+        draft.layout?.secondaryMediaPath ||
+        clips.find((c) => c.layoutOverride?.secondaryMediaPath)?.layoutOverride?.secondaryMediaPath;
+      const existingSecondaryType =
+        draft.layout?.secondaryMediaType ||
+        clips.find((c) => c.layoutOverride?.secondaryMediaType)?.layoutOverride?.secondaryMediaType ||
+        'video';
+      const existingSecondaryProbe =
+        draft.layout?.secondaryMediaProbe ||
+        clips.find((c) => c.layoutOverride?.secondaryMediaProbe)?.layoutOverride?.secondaryMediaProbe;
+
+      const applySecondaryPreservation = (lay: any) => {
+        if (
+          (templateId === 'media_top_game_bottom' || templateId === 'media_bottom_game_top') &&
+          existingSecondaryPath
+        ) {
+          lay.secondaryMediaPath = existingSecondaryPath;
+          lay.secondaryMediaType = existingSecondaryType;
+          lay.secondaryMediaProbe = existingSecondaryProbe;
+        }
+      };
+
+      // 1. Single clip on timeline -> Always update canonical draft.layout and clip override
+      if (!hasMultipleClips) {
+        const ratio = clips[0]?.layoutOverride?.splitRatio || draft.layout.splitRatio || 0.5;
+        const newLayout = getLayoutTemplate(templateId, ratio);
+        applySecondaryPreservation(newLayout);
+        draft.layout = newLayout;
+        if (clips[0]) {
+          clips[0].layoutOverride = JSON.parse(JSON.stringify(newLayout));
+        }
+        return draft;
+      }
+
+      // 2. Multi-clip timeline with specific clip targeting
       const effectiveClipId = targetClipId !== undefined
         ? targetClipId
-        : (hasMultipleClips && layoutScope === 'clip'
+        : (layoutScope === 'clip'
             ? (selectedClipId || clips.find((c) => currentTime >= c.start && currentTime < c.start + c.duration)?.id || clips[0]?.id)
             : null);
 
-      if (effectiveClipId) {
+      if (effectiveClipId && layoutScope === 'clip') {
         const targetClip = clips.find((c) => c.id === effectiveClipId);
         if (targetClip) {
           const ratio = targetClip.layoutOverride?.splitRatio || draft.layout.splitRatio || 0.5;
           const newLayout = getLayoutTemplate(templateId, ratio);
+          applySecondaryPreservation(newLayout);
           targetClip.layoutOverride = newLayout;
+          // Sync secondary media info to draft.layout fallback
+          if (newLayout.secondaryMediaPath && !draft.layout.secondaryMediaPath) {
+            draft.layout.secondaryMediaPath = newLayout.secondaryMediaPath;
+            draft.layout.secondaryMediaType = newLayout.secondaryMediaType;
+            draft.layout.secondaryMediaProbe = newLayout.secondaryMediaProbe;
+          }
           return draft;
         }
       }
 
-      // If targeting all or single-clip project
+      // 3. Multi-clip timeline applying to all clips
       const newLayout = getLayoutTemplate(templateId, draft.layout.splitRatio || 0.5);
+      applySecondaryPreservation(newLayout);
       draft.layout = newLayout;
-      if (hasMultipleClips && layoutScope === 'all') {
-        clips.forEach((c) => {
-          c.layoutOverride = JSON.parse(JSON.stringify(newLayout));
-        });
-      }
+      clips.forEach((c) => {
+        c.layoutOverride = JSON.parse(JSON.stringify(newLayout));
+      });
       return draft;
     });
 
@@ -263,7 +304,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       };
 
-      if (effectiveClipId) {
+      if (!hasMultipleClips) {
+        updateLayoutRatio(draft.layout);
+        if (clips[0]?.layoutOverride) {
+          updateLayoutRatio(clips[0].layoutOverride);
+        }
+        return draft;
+      }
+
+      if (effectiveClipId && layoutScope === 'clip') {
         const targetClip = clips.find((c) => c.id === effectiveClipId);
         if (targetClip) {
           if (!targetClip.layoutOverride) {
@@ -275,7 +324,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
 
       updateLayoutRatio(draft.layout);
-      if (hasMultipleClips && layoutScope === 'all') {
+      if (layoutScope === 'all') {
         clips.forEach((c) => {
           if (c.layoutOverride) updateLayoutRatio(c.layoutOverride);
         });
@@ -326,19 +375,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       };
 
-      if (effectiveClipId) {
+      if (!hasMultipleClips) {
+        updateLayoutSecondary(draft.layout);
+        if (clips[0]) {
+          if (!clips[0].layoutOverride) {
+            clips[0].layoutOverride = JSON.parse(JSON.stringify(draft.layout));
+          } else {
+            updateLayoutSecondary(clips[0].layoutOverride);
+          }
+        }
+        return draft;
+      }
+
+      if (effectiveClipId && layoutScope === 'clip') {
         const targetClip = clips.find((c) => c.id === effectiveClipId);
         if (targetClip) {
           if (!targetClip.layoutOverride) {
             targetClip.layoutOverride = JSON.parse(JSON.stringify(draft.layout));
           }
           updateLayoutSecondary(targetClip.layoutOverride);
+          // Keep draft.layout in sync as default fallback
+          updateLayoutSecondary(draft.layout);
           return draft;
         }
       }
 
       updateLayoutSecondary(draft.layout);
-      if (hasMultipleClips && layoutScope === 'all') {
+      if (layoutScope === 'all') {
         clips.forEach((c) => {
           if (c.layoutOverride) updateLayoutSecondary(c.layoutOverride);
         });

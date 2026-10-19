@@ -26,9 +26,7 @@ export default function RightProperties() {
   ) || videoTrack?.clips?.[0];
 
   const hasMultipleClips = (videoTrack?.clips?.length || 0) > 1;
-  const effectiveLayout = (hasMultipleClips && activeClip?.layoutOverride)
-    ? activeClip.layoutOverride
-    : project.layout;
+  const effectiveLayout = activeClip?.layoutOverride || project.layout;
 
   const selectedRegion = effectiveLayout.regions.find((r) => r.id === selectedRegionId);
   const isSecondary = selectedRegion?.sourceType === 'secondary_media';

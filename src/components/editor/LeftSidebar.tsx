@@ -57,9 +57,7 @@ export default function LeftSidebar() {
     : clips[0];
   const activeClipIndex = activeClip ? clips.indexOf(activeClip) : 0;
 
-  const currentLayout = (hasMultipleClips && layoutScope === 'clip' && activeClip?.layoutOverride)
-    ? activeClip.layoutOverride
-    : (activeClip?.layoutOverride || project?.layout);
+  const currentLayout = activeClip?.layoutOverride || project?.layout;
 
   const videoDuration = Math.round((videoTrack?.clips?.reduce((acc, c) => acc + c.duration, 0) || project?.source?.probe?.duration || 30) * 10) / 10;
 
@@ -312,7 +310,7 @@ export default function LeftSidebar() {
                   return (
                     <button
                       key={tpl.id}
-                      onClick={() => setLayoutTemplate(tpl.id, layoutScope === 'clip' ? activeClip?.id : null)}
+                      onClick={() => setLayoutTemplate(tpl.id, (hasMultipleClips && layoutScope === 'clip') ? activeClip?.id : undefined)}
                       className={`w-full text-left p-3 rounded-xl border transition flex items-start justify-between ${
                         isActive
                           ? 'bg-blue-600/10 border-blue-500/80 text-white'

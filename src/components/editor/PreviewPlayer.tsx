@@ -148,9 +148,7 @@ export default function PreviewPlayer() {
     ? playingClip
     : (selectedClipId ? clips.find((c) => c.id === selectedClipId) || playingClip : playingClip);
 
-  const effectiveLayout = (hasMultipleClips && activeClip?.layoutOverride)
-    ? activeClip.layoutOverride
-    : project?.layout;
+  const effectiveLayout = activeClip?.layoutOverride || project?.layout;
 
   const secondaryPath = effectiveLayout?.secondaryMediaPath || project?.layout?.secondaryMediaPath;
   const secondaryMediaType = effectiveLayout?.secondaryMediaType || project?.layout?.secondaryMediaType;

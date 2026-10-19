@@ -21,7 +21,12 @@ interface SecondaryMediaManagerProps {
 }
 
 export default function SecondaryMediaManager({ compact = false }: SecondaryMediaManagerProps) {
-  const { project, setSecondaryMedia, updateProject } = useEditorStore();
+  const {
+    project,
+    setSecondaryMedia,
+    selectedClipId,
+    currentTime,
+  } = useEditorStore();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -33,17 +38,35 @@ export default function SecondaryMediaManager({ compact = false }: SecondaryMedi
 
   if (!project) return null;
 
+  const videoTrack = project.tracks?.find((t) => t.type === 'video');
+  const clips = videoTrack?.clips || [];
+  const activeClip = clips.find((c) =>
+    selectedClipId ? c.id === selectedClipId : currentTime >= c.start && currentTime < c.start + c.duration
+  ) || clips[0];
+
+  const activeLayout = activeClip?.layoutOverride || project.layout;
+
   const isMediaLayout =
-    project.layout.templateId === 'media_top_game_bottom' ||
-    project.layout.templateId === 'media_bottom_game_top';
+    activeLayout?.templateId === 'media_top_game_bottom' ||
+    activeLayout?.templateId === 'media_bottom_game_top' ||
+    project.layout?.templateId === 'media_top_game_bottom' ||
+    project.layout?.templateId === 'media_bottom_game_top';
 
   if (!isMediaLayout) return null;
 
-  const isMediaTop = project.layout.templateId === 'media_top_game_bottom';
+  const isMediaTop =
+    activeLayout?.templateId === 'media_top_game_bottom' ||
+    project.layout?.templateId === 'media_top_game_bottom';
   const slotLabel = isMediaTop ? 'Top Media Slot' : 'Bottom Media Slot';
-  const hasMedia = Boolean(project.layout.secondaryMediaPath);
-  const mediaPath = project.layout.secondaryMediaPath || '';
-  const mediaType = project.layout.secondaryMediaType || 'video';
+  const mediaPath =
+    activeLayout?.secondaryMediaPath ||
+    project.layout?.secondaryMediaPath ||
+    '';
+  const mediaType =
+    activeLayout?.secondaryMediaType ||
+    project.layout?.secondaryMediaType ||
+    'video';
+  const hasMedia = Boolean(mediaPath);
   const fileName = mediaPath ? mediaPath.split(/[\\/]/).pop() : '';
 
   const handleFileUpload = async (file: File) => {
